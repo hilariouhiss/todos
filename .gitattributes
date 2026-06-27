@@ -1,0 +1,18 @@
+# Normalize line endings for all text files
+* text=auto
+
+# Rust source files
+*.rs text diff=rust
+*.toml text
+*.md text
+
+# Slint UI files
+*.slint text
+
+# Generated files (slint-build output is generated at build time)
+# The include_modules!() macro includes generated code — no need to track it
+
+# Binary files
+*.png binary
+*.ico binary
+*.wasm binary

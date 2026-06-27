@@ -1,0 +1,15 @@
+# Rust build output
+target/
+
+# Rust backup files
+**/*.rs.bk
+
+# IDE files
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
