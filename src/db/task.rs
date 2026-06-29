@@ -27,9 +27,9 @@ impl TaskRepository for SqliteTaskRepository {
         let mut stmt = conn.prepare(
             "SELECT id, title, description, status, priority, sort_order,
                     due_at, reminder_at, parent_task_id, project_id,
-                    assignee_id, completed_at, creator_id, created_at,
-                    updater_id, updated_at, deleter_id, deleted_at,
-                    archiver_id, archived_at
+                    assignee, completed_at, created_by, created_at,
+                    updated_by, updated_at, deleted_by, deleted_at,
+                    archived_by, archived_at
              FROM tasks
              WHERE deleted_at IS NULL AND status = ?1
              ORDER BY sort_order ASC",
@@ -49,15 +49,15 @@ impl TaskRepository for SqliteTaskRepository {
                 reminder_at: row.get(7)?,
                 parent_task_id: row.get(8)?,
                 project_id: row.get(9)?,
-                assignee_id: row.get(10)?,
+                assignee: row.get(10)?,
                 completed_at: row.get(11)?,
-                creator_id: row.get(12)?,
+                created_by: row.get(12)?,
                 created_at: row.get(13)?,
-                updater_id: row.get(14)?,
+                updated_by: row.get(14)?,
                 updated_at: row.get(15)?,
-                deleter_id: row.get(16)?,
+                deleted_by: row.get(16)?,
                 deleted_at: row.get(17)?,
-                archiver_id: row.get(18)?,
+                archived_by: row.get(18)?,
                 archived_at: row.get(19)?,
             })
         })?;
@@ -277,15 +277,15 @@ mod tests {
             reminder_at: None,
             parent_task_id: None,
             project_id: None,
-            assignee_id: None,
+            assignee: None,
             completed_at: None,
-            creator_id: None,
+            created_by: None,
             created_at: String::new(),
-            updater_id: None,
+            updated_by: None,
             updated_at: String::new(),
-            deleter_id: None,
+            deleted_by: None,
             deleted_at: None,
-            archiver_id: None,
+            archived_by: None,
             archived_at: None,
         }
     }

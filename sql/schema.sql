@@ -11,15 +11,15 @@ CREATE TABLE IF NOT EXISTS tasks (
     reminder_at     TEXT,
     parent_task_id  INTEGER REFERENCES tasks(id),
     project_id      INTEGER,
-    assignee_id     INTEGER,
+    assignee        INTEGER,
     completed_at    TEXT,
-    creator_id      INTEGER,
+    created_by      INTEGER,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updater_id      INTEGER,
+    updated_by      INTEGER,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    deleter_id      INTEGER,
+    deleted_by      INTEGER,
     deleted_at      TEXT,
-    archiver_id     INTEGER,
+    archived_by     INTEGER,
     archived_at     TEXT
 );
 
