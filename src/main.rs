@@ -6,13 +6,9 @@ use std::error::Error;
 slint::include_modules!();
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let ui = AppWindow::new()?;
+    let ui = MainWindow::new()?;
 
-    let ui_handle = ui.as_weak();
-    ui.on_request_increase_value(move || {
-        let ui = ui_handle.unwrap();
-        ui.set_counter(ui.get_counter() + 1);
-    });
+    let _ui_handle = ui.as_weak();
 
     ui.run()?;
 
