@@ -126,34 +126,32 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Err(_) => return DragAction::None,
             };
 
-            // Check precision and renumber if needed
-            let prev_order = if effective_index > 0 {
-                target_tasks
-                    .get(effective_index as usize - 1)
-                    .map(|t| t.sort_order)
-            } else {
-                None
-            };
-            let next_order = target_tasks
-                .get(effective_index as usize)
-                .map(|t| t.sort_order);
+            // For same-column moves, exclude the source task from the neighbor
+            // list so prev/next sort_orders are from the *other* tasks only.
+            let is_same_column = source_column == target_column;
+
+            // Compute prev/next from the neighbor list (source-filtered if same column)
+            let (prev_order, next_order) =
+                sort_neighbors(&target_tasks, is_same_column, source_index, effective_index);
 
             if task::sort_order_gap_too_small(prev_order, next_order) {
                 let _ = task_repo.renumber_column(target_status);
             }
 
-            // Reload to get fresh sort_orders (may have changed from renumber)
+            // Reload (may have changed from renumber), re-filter, compute final sort_order
             let reloaded = task_repo
                 .load_by_status(target_status)
                 .unwrap_or(target_tasks);
-            let prev_order = if effective_index > 0 {
-                reloaded
-                    .get(effective_index as usize - 1)
-                    .map(|t| t.sort_order)
-            } else {
-                None
-            };
-            let next_order = reloaded.get(effective_index as usize).map(|t| t.sort_order);
+            let (prev_order, next_order) =
+                sort_neighbors(&reloaded, is_same_column, source_index, effective_index);
+            let new_order = task::compute_sort_order(prev_order, next_order);
+
+            if task_repo
+                .move_task(task_id, target_status, new_order)
+                .is_err()
+            {
+                return DragAction::None;
+            }
             let new_order = task::compute_sort_order(prev_order, next_order);
 
             if task_repo
@@ -182,7 +180,38 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// ---- Helpers ----
+/// Compute prev and next sort_orders for insertion at `effective_index`.
+/// When `filter_source` is true, the task at `source_index` is excluded from the
+/// neighbor list so its own sort_order doesn't contaminate the computation.
+fn sort_neighbors(
+    tasks: &[model::Task],
+    filter_source: bool,
+    source_index: i32,
+    effective_index: i32,
+) -> (Option<f64>, Option<f64>) {
+    let neighbors: Vec<&model::Task> = if filter_source {
+        tasks
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != source_index as usize)
+            .map(|(_, t)| t)
+            .collect()
+    } else {
+        tasks.iter().collect()
+    };
+
+    let prev = if effective_index > 0 {
+        neighbors
+            .get(effective_index as usize - 1)
+            .map(|t| t.sort_order)
+    } else {
+        None
+    };
+    let next = neighbors
+        .get(effective_index as usize)
+        .map(|t| t.sort_order);
+    (prev, next)
+}
 
 fn column_to_status(col: i32) -> Option<TaskStatus> {
     match col {
