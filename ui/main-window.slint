@@ -1,6 +1,6 @@
 // Three-column todo kanban with drag-and-drop using Slint 1.17.0 API.
 
-import { Palette } from "std-widgets.slint";
+import { Palette, Button, ComboBox } from "std-widgets.slint";
 
 // ---- Slint-compatible card data ----
 // Matches the Rust-side conversion in main.rs.
@@ -21,6 +21,11 @@ export global Api {
     pure callback can-drop(event: DropEvent, target-column: int, target-index: int) -> DragAction;
     // Returns DragAction.move on success, DragAction.none on failure/no-op.
     callback dropped(event: DropEvent, target-column: int, target-index: int) -> DragAction;
+    // Add-item callbacks for header buttons and dialog overlays.
+    callback add-tag(name: string, color: string);
+    callback add-project(name: string, description: string, manager: string, color: string);
+    callback add-task(title: string, description: string, due-at: string,
+                      priority: int, parent-task-id: string, project-id: string);
 }
 
 // ---- Layout constants ----
@@ -52,6 +57,26 @@ global PriorityColors {
     out property <color> p1: #d29922;
     out property <color> p2: #58a6ff;
     out property <color> p3: #8b949e;
+}
+
+// ---- Color presets for tag/project dialogs ----
+
+struct ColorPreset {
+    color: color,
+    label: string,
+}
+
+global ColorPresets {
+    out property <[ColorPreset]> all: [
+        { color: #58a6ff, label: "蓝" },
+        { color: #3fb950, label: "绿" },
+        { color: #d29922, label: "黄" },
+        { color: #f85149, label: "红" },
+        { color: #bc8cff, label: "紫" },
+        { color: #ff7b72, label: "橙" },
+        { color: #8b949e, label: "灰" },
+        { color: #ffffff, label: "白" },
+    ];
 }
 
 // ---- Card ----
@@ -241,16 +266,49 @@ export component MainWindow inherits Window {
     in-out property <[TaskCardUi]> doing;
     in-out property <[TaskCardUi]> done;
 
+    // Dialog visibility
+    in-out property <bool> show-add-tag-dialog: false;
+    in-out property <bool> show-add-project-dialog: false;
+    in-out property <bool> show-add-task-dialog: false;
+    in-out property <bool> task-dialog-expanded: false;
+
     VerticalLayout {
         padding: 16px;
         spacing: 12px;
 
-        Text {
-            text: "拖拽卡片到不同列以修改任务状态";
-            font-size: 14px;
-            color: Theme.text-secondary;
+        // Header bar: hint text + add buttons
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+
+            Text {
+                text: "拖拽卡片到不同列以修改任务状态";
+                font-size: 14px;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+
+            // Spacer to push buttons right
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "+标签";
+                clicked => { root.show-add-tag-dialog = true; }
+            }
+            Button {
+                text: "+项目";
+                clicked => { root.show-add-project-dialog = true; }
+            }
+            Button {
+                text: "+任务";
+                clicked => {
+                    root.show-add-task-dialog = true;
+                    root.task-dialog-expanded = false;
+                }
+            }
         }
 
+        // Kanban columns
         HorizontalLayout {
             spacing: 12px;
             alignment: stretch;
@@ -274,6 +332,182 @@ export component MainWindow inherits Window {
                 column-id: 2;
                 tasks: root.done;
                 accent: Theme.dark ? #3fb950 : #1a7f37;
+            }
+        }
+    }
+
+    // ---- Add Tag Dialog Overlay ----
+    if root.show-add-tag-dialog: Rectangle {
+        x: 0; y: 0; width: 100%; height: 100%;
+        background: #00000044;
+        TouchArea { } // block clicks to board beneath
+
+        Rectangle {
+            width: 320px; height: 260px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.card-bg;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.card-border;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text { text: "添加标签"; font-size: 18px; font-weight: 700; color: Theme.text-primary; }
+
+                Text { text: "名称"; color: Theme.text-secondary; }
+                name-input := TextInput { text: ""; }
+
+                Text { text: "颜色"; color: Theme.text-secondary; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    for preset in ColorPresets.all: Rectangle {
+                        width: 28px; height: 28px;
+                        border-radius: 4px;
+                        background: preset.color;
+                        border-width: 1px;
+                        border-color: Theme.card-border;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button { text: "取消"; clicked => { root.show-add-tag-dialog = false; } }
+                    Button { text: "确认"; clicked => {
+                        Api.add-tag(name-input.text, "#58a6ff");
+                        root.show-add-tag-dialog = false;
+                    } }
+                }
+            }
+        }
+    }
+
+    // ---- Add Project Dialog Overlay ----
+    if root.show-add-project-dialog: Rectangle {
+        x: 0; y: 0; width: 100%; height: 100%;
+        background: #00000044;
+        TouchArea { }
+
+        Rectangle {
+            width: 360px; height: 380px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.card-bg;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.card-border;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                Text { text: "添加项目"; font-size: 18px; font-weight: 700; color: Theme.text-primary; }
+
+                Text { text: "名称"; color: Theme.text-secondary; }
+                proj-name := TextInput { text: ""; }
+
+                Text { text: "描述"; color: Theme.text-secondary; }
+                proj-desc := TextInput { text: ""; }
+
+                Text { text: "负责人"; color: Theme.text-secondary; }
+                proj-mgr := TextInput { text: ""; }
+
+                Text { text: "颜色"; color: Theme.text-secondary; }
+                HorizontalLayout {
+                    spacing: 6px;
+                    for preset in ColorPresets.all: Rectangle {
+                        width: 28px; height: 28px;
+                        border-radius: 4px;
+                        background: preset.color;
+                        border-width: 1px;
+                        border-color: Theme.card-border;
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button { text: "取消"; clicked => { root.show-add-project-dialog = false; } }
+                    Button { text: "确认"; clicked => {
+                        Api.add-project(proj-name.text, proj-desc.text, proj-mgr.text, "#3fb950");
+                        root.show-add-project-dialog = false;
+                    } }
+                }
+            }
+        }
+    }
+
+    // ---- Add Task Dialog Overlay ----
+    if root.show-add-task-dialog: Rectangle {
+        x: 0; y: 0; width: 100%; height: 100%;
+        background: #00000044;
+        TouchArea { }
+
+        Rectangle {
+            width: 400px;
+            height: root.task-dialog-expanded ? 480px : 320px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.card-bg;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.card-border;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+
+                Text { text: "添加任务"; font-size: 18px; font-weight: 700; color: Theme.text-primary; }
+
+                Text { text: "标题"; color: Theme.text-secondary; }
+                task-title := TextInput { text: ""; }
+
+                Text { text: "描述"; color: Theme.text-secondary; }
+                task-desc := TextInput { text: ""; }
+
+                Text { text: "截止日期 (YYYY-MM-DD)"; color: Theme.text-secondary; }
+                task-due := TextInput { text: ""; }
+
+                Text {
+                    text: root.task-dialog-expanded ? "收起 ▲" : "更多 ▼";
+                    color: Theme.text-secondary;
+                    horizontal-alignment: center;
+                }
+                TouchArea { clicked => { root.task-dialog-expanded = !root.task-dialog-expanded; } }
+
+                if root.task-dialog-expanded: VerticalLayout {
+                    spacing: 10px;
+
+                    Text { text: "优先级"; color: Theme.text-secondary; }
+                    task-prio := ComboBox {
+                        model: ["P0 - 紧急", "P1 - 高", "P2 - 中", "P3 - 低"];
+                        current-index: 2;
+                    }
+
+                    Text { text: "父任务 ID"; color: Theme.text-secondary; }
+                    task-parent := TextInput { text: ""; }
+
+                    Text { text: "项目 ID"; color: Theme.text-secondary; }
+                    task-proj := TextInput { text: ""; }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Button { text: "取消"; clicked => {
+                        root.show-add-task-dialog = false;
+                        root.task-dialog-expanded = false;
+                    } }
+                    Button { text: "确认"; clicked => {
+                        Api.add-task(task-title.text, task-desc.text, task-due.text,
+                            2, "0", "0");
+                        root.show-add-task-dialog = false;
+                        root.task-dialog-expanded = false;
+                    } }
+                }
             }
         }
     }
