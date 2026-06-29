@@ -1,5 +1,280 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+// Three-column todo kanban with drag-and-drop using Slint 1.17.0 API.
+
+import { Palette } from "std-widgets.slint";
+
+// ---- Slint-compatible card data ----
+// Matches the Rust-side conversion in main.rs.
+
+export struct TaskCardUi {
+    id: string,
+    title: string,
+    priority: int,
+    due-text: string,
+    is-overdue: bool,
+    tags: [string],
+}
+
+// ---- Drag-and-drop bridge ----
+
+export global Api {
+    pure callback make-data(task-id: string, source-column: int, source-index: int) -> data-transfer;
+    pure callback can-drop(event: DropEvent, target-column: int, target-index: int) -> DragAction;
+    // Returns DragAction.move on success, DragAction.none on failure/no-op.
+    callback dropped(event: DropEvent, target-column: int, target-index: int) -> DragAction;
+}
+
+// ---- Layout constants ----
+
+global Layout {
+    out property <length> card-height: 56px;
+    out property <length> card-spacing: 6px;
+    out property <length> card-stride: card-height + card-spacing;
+}
+
+// ---- Theme (follows system dark/light via Palette) ----
+
+global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> window-bg:       dark ? #0d1117 : #ffffff;
+    out property <color> column-bg:       dark ? #161b22 : #f6f8fa;
+    out property <color> column-drop-bg:  dark ? #1d2733 : #eaf5ff;
+    out property <color> column-border:   dark ? #30363d : #d0d7de;
+    out property <color> card-bg:         dark ? #21262d : #ffffff;
+    out property <color> card-border:     dark ? #30363d : #d0d7de;
+    out property <color> shadow:          dark ? #00000066 : #00000018;
+    out property <color> text-primary:    dark ? #e6edf3 : #1f2328;
+    out property <color> text-secondary:  dark ? #768390 : #57606a;
+    out property <color> overdue:         dark ? #ff7b72 : #cf222e;
+}
+
+global PriorityColors {
+    out property <color> p0: #f85149;
+    out property <color> p1: #d29922;
+    out property <color> p2: #58a6ff;
+    out property <color> p3: #8b949e;
+}
+
+// ---- Card ----
+
+component Card inherits Rectangle {
+    in property <TaskCardUi> task;
+    in-out property <int> source-column;
+    in-out property <int> source-index;
+
+    height: Layout.card-height;
+    background: Theme.card-bg;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    drop-shadow-blur: 6px;
+    drop-shadow-offset-y: 2px;
+    drop-shadow-color: Theme.shadow;
+
+    DragArea {
+        allow-move: true;
+        data: Api.make-data(root.task.id, root.source-column, root.source-index);
+        opacity: self.dragging ? 0.4 : 1.0;
+
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+            alignment: start;
+
+            // Priority dot
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.task.priority == 0 ? PriorityColors.p0 :
+                            root.task.priority == 1 ? PriorityColors.p1 :
+                            root.task.priority == 2 ? PriorityColors.p2 :
+                            PriorityColors.p3;
+            }
+
+            VerticalLayout {
+                alignment: start;
+
+                // Title
+                Text {
+                    text: root.task.title;
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                    overflow: elide;
+                }
+
+                // Bottom row: priority label, due date, tags
+                HorizontalLayout {
+                    spacing: 4px;
+
+                    Text {
+                        text: "P" + root.task.priority;
+                        font-size: 11px;
+                        color: root.task.is-overdue ? Theme.overdue : Theme.text-secondary;
+                    }
+
+                    if root.task.due-text != "": Text {
+                        text: "📅 " + root.task.due-text;
+                        font-size: 11px;
+                        color: root.task.is-overdue ? Theme.overdue : Theme.text-secondary;
+                        font-weight: root.task.is-overdue ? 600 : 400;
+                    }
+
+                    for tag in root.task.tags: Rectangle {
+                        height: 16px;
+                        border-radius: 3px;
+                        background: Theme.text-secondary.with-alpha(0.15);
+
+                        Text {
+                            text: tag;
+                            font-size: 10px;
+                            color: Theme.text-secondary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---- Column ----
+
+component KanbanColumn inherits Rectangle {
+    in property <string> title;
+    in property <int> column-id;
+    in property <[TaskCardUi]> tasks;
+    in property <color> accent;
+
+    property <length> hover-y;
+
+    property <int> drop-index: clamp(
+        floor((hover-y - Layout.card-height / 2) / Layout.card-stride) + 1,
+        0, root.tasks.length
+    );
+
+    min-width: 200px;
+    background: drop-area.has-drag ? Theme.column-drop-bg : Theme.column-bg;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: drop-area.has-drag ? root.accent : Theme.column-border;
+    animate background, border-color { duration: 120ms; }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        // Column header
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.accent;
+            }
+
+            Text {
+                text: root.title;
+                font-size: 15px;
+                font-weight: 700;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.tasks.length;
+                color: Theme.text-secondary;
+                font-size: 13px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                horizontal-stretch: 1;
+            }
+        }
+
+        // Drop zone
+        drop-area := DropArea {
+            vertical-stretch: 1;
+            can-drop(event) => {
+                root.hover-y = event.position.y;
+                return Api.can-drop(event, root.column-id, root.drop-index);
+            }
+            dropped(event) => {
+                return Api.dropped(event, root.column-id, root.drop-index);
+            }
+
+            VerticalLayout {
+                spacing: Layout.card-spacing;
+                alignment: start;
+
+                for task[i] in root.tasks: Card {
+                    task: task;
+                    source-column: root.column-id;
+                    source-index: i;
+                }
+            }
+
+            // Insertion indicator
+            if drop-area.has-drag: Rectangle {
+                x: 0;
+                width: parent.width;
+                y: max(0px, root.drop-index * Layout.card-stride
+                            - Layout.card-spacing / 2 - 1.5px);
+                height: 3px;
+                background: root.accent;
+                border-radius: 1.5px;
+            }
+        }
+    }
+}
+
+// ---- Main window ----
 
 export component MainWindow inherits Window {
-    
+    title: "Todos — Drag & Drop";
+    preferred-width: 800px;
+    preferred-height: 520px;
+    background: Theme.window-bg;
+
+    in-out property <[TaskCardUi]> todo;
+    in-out property <[TaskCardUi]> doing;
+    in-out property <[TaskCardUi]> done;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: "拖拽卡片到不同列以修改任务状态";
+            font-size: 14px;
+            color: Theme.text-secondary;
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: stretch;
+
+            KanbanColumn {
+                title: "📋 待办";
+                column-id: 0;
+                tasks: root.todo;
+                accent: Theme.dark ? #e3b341 : #d29922;
+            }
+
+            KanbanColumn {
+                title: "🔄 进行中";
+                column-id: 1;
+                tasks: root.doing;
+                accent: Theme.dark ? #58a6ff : #1f6feb;
+            }
+
+            KanbanColumn {
+                title: "✅ 已完成";
+                column-id: 2;
+                tasks: root.done;
+                accent: Theme.dark ? #3fb950 : #1a7f37;
+            }
+        }
+    }
 }
