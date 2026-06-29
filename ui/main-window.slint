@@ -270,7 +270,6 @@ export component MainWindow inherits Window {
     in-out property <bool> show-add-tag-dialog: false;
     in-out property <bool> show-add-project-dialog: false;
     in-out property <bool> show-add-task-dialog: false;
-    in-out property <bool> task-dialog-expanded: false;
 
     VerticalLayout {
         padding: 16px;
@@ -301,10 +300,7 @@ export component MainWindow inherits Window {
             }
             Button {
                 text: "+任务";
-                clicked => {
-                    root.show-add-task-dialog = true;
-                    root.task-dialog-expanded = false;
-                }
+                clicked => { root.show-add-task-dialog = true; }
             }
         }
 
@@ -448,7 +444,7 @@ export component MainWindow inherits Window {
 
         Rectangle {
             width: 400px;
-            height: root.task-dialog-expanded ? 480px : 320px;
+            height: 480px;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             background: Theme.card-bg;
@@ -471,42 +467,26 @@ export component MainWindow inherits Window {
                 Text { text: "截止日期 (YYYY-MM-DD)"; color: Theme.text-secondary; }
                 task-due := TextInput { text: ""; }
 
-                Text {
-                    text: root.task-dialog-expanded ? "收起 ▲" : "更多 ▼";
-                    color: Theme.text-secondary;
-                    horizontal-alignment: center;
+                Text { text: "优先级"; color: Theme.text-secondary; }
+                task-prio := ComboBox {
+                    model: ["P0 - 紧急", "P1 - 高", "P2 - 中", "P3 - 低"];
+                    current-index: 2;
                 }
-                TouchArea { clicked => { root.task-dialog-expanded = !root.task-dialog-expanded; } }
 
-                VerticalLayout {
-                    spacing: 10px;
-                    visible: root.task-dialog-expanded;
+                Text { text: "父任务 ID"; color: Theme.text-secondary; }
+                task-parent := TextInput { text: ""; }
 
-                    Text { text: "优先级"; color: Theme.text-secondary; }
-                    task-prio := ComboBox {
-                        model: ["P0 - 紧急", "P1 - 高", "P2 - 中", "P3 - 低"];
-                        current-index: 2;
-                    }
-
-                    Text { text: "父任务 ID"; color: Theme.text-secondary; }
-                    task-parent := TextInput { text: ""; }
-
-                    Text { text: "项目 ID"; color: Theme.text-secondary; }
-                    task-proj := TextInput { text: ""; }
-                }
+                Text { text: "项目 ID"; color: Theme.text-secondary; }
+                task-proj := TextInput { text: ""; }
 
                 HorizontalLayout {
                     spacing: 8px;
                     alignment: end;
-                    Button { text: "取消"; clicked => {
-                        root.show-add-task-dialog = false;
-                        root.task-dialog-expanded = false;
-                    } }
+                    Button { text: "取消"; clicked => { root.show-add-task-dialog = false; } }
                     Button { text: "确认"; clicked => {
                         Api.add-task(task-title.text, task-desc.text, task-due.text,
                             task-prio.current-index, "0", "0");
                         root.show-add-task-dialog = false;
-                        root.task-dialog-expanded = false;
                     } }
                 }
             }
