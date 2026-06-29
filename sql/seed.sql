@@ -36,3 +36,8 @@ INSERT INTO task_tags (tag_id, task_id) VALUES
     (5, 7),
     (3, 8),
     (5, 9);
+
+-- Seed projects
+INSERT INTO projects (id, name, description, manager, color, created_at, updated_at) VALUES
+    (1, 'Todo App',  '待办事项管理应用',          '刘海阳', '#58a6ff', datetime('now'), datetime('now')),
+    (2, 'Design System', '设计系统组件库',        '刘海阳', '#3fb950', datetime('now'), datetime('now'));

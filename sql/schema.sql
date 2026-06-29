@@ -42,3 +42,20 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status_sort
 CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    manager     TEXT NOT NULL DEFAULT '',
+    color       TEXT,
+    created_by  INTEGER,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by  INTEGER,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_by  INTEGER,
+    deleted_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_deleted
+    ON projects(id) WHERE deleted_at IS NULL;
