@@ -478,8 +478,9 @@ export component MainWindow inherits Window {
                 }
                 TouchArea { clicked => { root.task-dialog-expanded = !root.task-dialog-expanded; } }
 
-                if root.task-dialog-expanded: VerticalLayout {
+                VerticalLayout {
                     spacing: 10px;
+                    visible: root.task-dialog-expanded;
 
                     Text { text: "优先级"; color: Theme.text-secondary; }
                     task-prio := ComboBox {
@@ -503,7 +504,7 @@ export component MainWindow inherits Window {
                     } }
                     Button { text: "确认"; clicked => {
                         Api.add-task(task-title.text, task-desc.text, task-due.text,
-                            2, "0", "0");
+                            task-prio.current-index, "0", "0");
                         root.show-add-task-dialog = false;
                         root.task-dialog-expanded = false;
                     } }
