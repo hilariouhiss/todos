@@ -32,28 +32,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // --- Database init ---
     let (task_repo, tag_repo) = db::init("todos.db")?;
 
-    // --- Load initial column data ---
-    let todo_tasks = task_repo.load_by_status(TaskStatus::Todo)?;
-    let doing_tasks = task_repo.load_by_status(TaskStatus::InProgress)?;
-    let done_tasks = task_repo.load_by_status(TaskStatus::Done)?;
-
-    let all_ids: Vec<i64> = todo_tasks
-        .iter()
-        .chain(doing_tasks.iter())
-        .chain(done_tasks.iter())
-        .map(|t| t.id)
-        .collect();
-    let tags_map = tag_repo.load_for_tasks(&all_ids)?;
-
-    let todo_model = build_card_model(&todo_tasks, &tags_map);
-    let doing_model = build_card_model(&doing_tasks, &tags_map);
-    let done_model = build_card_model(&done_tasks, &tags_map);
-
     // --- Create UI ---
     let ui = MainWindow::new()?;
-    ui.set_todo(todo_model);
-    ui.set_doing(doing_model);
-    ui.set_done(done_model);
+
+    // --- Load initial column data ---
+    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Todo, &ui);
+    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::InProgress, &ui);
+    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Done, &ui);
 
     // --- Wire Api callbacks ---
     let task_repo_rc = Rc::new(task_repo);
@@ -90,11 +75,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let ui_weak = ui_weak.clone();
 
         api.on_dropped(move |event, target_column, target_index| {
-            let payload: DragPayload = match event.data.user_data() {
-                Some(rc) => match rc.downcast::<DragPayload>() {
-                    Ok(rc) => (*rc).clone(),
-                    Err(_) => return DragAction::None,
-                },
+            let payload = match extract_payload(event.data.user_data()) {
+                Some(p) => p,
                 None => return DragAction::None,
             };
 
@@ -102,9 +84,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             let source_column = payload.source_column;
             let source_index = payload.source_index;
 
-            let target_status = column_to_status(target_column);
-            let source_status = column_to_status(source_column);
-            let (Some(target_status), Some(source_status)) = (target_status, source_status) else {
+            let Some(target_status) = TaskStatus::from_i32(target_column) else {
+                return DragAction::None;
+            };
+            let Some(source_status) = TaskStatus::from_i32(source_column) else {
                 return DragAction::None;
             };
 
@@ -116,7 +99,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             // No-op guard
-            if source_column == target_column && source_index == effective_index {
+            let is_same_column = source_column == target_column;
+            if is_same_column && source_index == effective_index {
                 return DragAction::None;
             }
 
@@ -126,13 +110,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Err(_) => return DragAction::None,
             };
 
-            // For same-column moves, exclude the source task from the neighbor
-            // list so prev/next sort_orders are from the *other* tasks only.
-            let is_same_column = source_column == target_column;
-
             // Compute prev/next from the neighbor list (source-filtered if same column)
             let (prev_order, next_order) =
-                sort_neighbors(&target_tasks, is_same_column, source_index, effective_index);
+                task::sort_neighbors(&target_tasks, is_same_column, source_index, effective_index);
 
             if task::sort_order_gap_too_small(prev_order, next_order) {
                 let _ = task_repo.renumber_column(target_status);
@@ -143,7 +123,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .load_by_status(target_status)
                 .unwrap_or(target_tasks);
             let (prev_order, next_order) =
-                sort_neighbors(&reloaded, is_same_column, source_index, effective_index);
+                task::sort_neighbors(&reloaded, is_same_column, source_index, effective_index);
             let new_order = task::compute_sort_order(prev_order, next_order);
 
             if task_repo
@@ -157,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Some(ui) = ui_weak.upgrade() {
                 rebuild_and_set_column(&*task_repo, &*tag_repo, target_status, &ui);
 
-                if source_column != target_column {
+                if !is_same_column {
                     rebuild_and_set_column(&*task_repo, &*tag_repo, source_status, &ui);
                 }
             }
@@ -172,46 +152,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Compute prev and next sort_orders for insertion at `effective_index`.
-/// When `filter_source` is true, the task at `source_index` is excluded from the
-/// neighbor list so its own sort_order doesn't contaminate the computation.
-fn sort_neighbors(
-    tasks: &[model::Task],
-    filter_source: bool,
-    source_index: i32,
-    effective_index: i32,
-) -> (Option<f64>, Option<f64>) {
-    let neighbors: Vec<&model::Task> = if filter_source {
-        tasks
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != source_index as usize)
-            .map(|(_, t)| t)
-            .collect()
-    } else {
-        tasks.iter().collect()
-    };
+// ---- Helpers ----
 
-    let prev = if effective_index > 0 {
-        neighbors
-            .get(effective_index as usize - 1)
-            .map(|t| t.sort_order)
-    } else {
-        None
-    };
-    let next = neighbors
-        .get(effective_index as usize)
-        .map(|t| t.sort_order);
-    (prev, next)
-}
-
-fn column_to_status(col: i32) -> Option<TaskStatus> {
-    match col {
-        0 => Some(TaskStatus::Todo),
-        1 => Some(TaskStatus::InProgress),
-        2 => Some(TaskStatus::Done),
-        _ => None,
-    }
+fn extract_payload(data: Option<Rc<dyn std::any::Any>>) -> Option<DragPayload> {
+    data.and_then(|rc| rc.downcast::<DragPayload>().ok())
+        .map(|rc| (*rc).clone())
 }
 
 /// Reload tasks for `status` from the database, build a fresh `ModelRc`,
@@ -250,24 +195,21 @@ fn build_card_model(
             card_data_to_slint(task.to_card_data(tags))
         })
         .collect();
-    ModelRc::from(Rc::new(VecModel::from(cards)))
+    vec_to_model_rc(cards)
 }
 
 /// Convert platform-independent `TaskCardData` to the Slint-generated `TaskCardUi`.
 fn card_data_to_slint(data: TaskCardData) -> TaskCardUi {
-    let tags_model: ModelRc<SharedString> = ModelRc::from(Rc::new(VecModel::from(
-        data.tags
-            .into_iter()
-            .map(SharedString::from)
-            .collect::<Vec<_>>(),
-    )));
-
     TaskCardUi {
-        id: data.id.into(),
-        title: data.title.into(),
+        id: data.id.as_str().into(),
+        title: data.title.as_str().into(),
         priority: data.priority,
-        due_text: data.due_text.into(),
+        due_text: data.due_text.as_str().into(),
         is_overdue: data.is_overdue,
-        tags: tags_model,
+        tags: vec_to_model_rc(data.tags.into_iter().map(SharedString::from).collect()),
     }
+}
+
+fn vec_to_model_rc<T: 'static + Clone>(v: Vec<T>) -> ModelRc<T> {
+    ModelRc::from(Rc::new(VecModel::from(v)))
 }

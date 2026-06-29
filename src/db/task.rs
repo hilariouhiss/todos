@@ -8,8 +8,6 @@ use crate::model::{Task, TaskStatus};
 pub trait TaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>>;
     fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()>;
-    #[allow(dead_code)]
-    fn reorder(&self, task_id: i64, sort_order: f64) -> Result<()>;
     fn renumber_column(&self, status: TaskStatus) -> Result<()>;
 }
 
@@ -83,15 +81,6 @@ impl TaskRepository for SqliteTaskRepository {
         Ok(())
     }
 
-    fn reorder(&self, task_id: i64, sort_order: f64) -> Result<()> {
-        let conn = self.conn.borrow();
-        conn.execute(
-            "UPDATE tasks SET sort_order = ?1, updated_at = datetime('now') WHERE id = ?2",
-            params![sort_order, task_id],
-        )?;
-        Ok(())
-    }
-
     fn renumber_column(&self, status: TaskStatus) -> Result<()> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -104,6 +93,10 @@ impl TaskRepository for SqliteTaskRepository {
             .query_map(params![status as i32], |row| row.get(0))?
             .collect::<Result<Vec<i64>>>()?;
 
+        // Drop the statement borrow before starting the transaction
+        drop(stmt);
+
+        conn.execute_batch("BEGIN IMMEDIATE")?;
         for (i, id) in ids.iter().enumerate() {
             let new_order = (i as f64 + 1.0) * 1000.0;
             conn.execute(
@@ -111,6 +104,7 @@ impl TaskRepository for SqliteTaskRepository {
                 params![new_order, id],
             )?;
         }
+        conn.execute_batch("COMMIT")?;
         Ok(())
     }
 }
@@ -131,4 +125,34 @@ pub fn sort_order_gap_too_small(prev: Option<f64>, next: Option<f64>) -> bool {
         (Some(p), Some(n)) => (n - p).abs() < 0.000001,
         _ => false,
     }
+}
+
+/// Compute prev and next sort_orders for insertion at `effective_index`.
+/// When `filter_source` is true, the task at `source_index` is excluded so its
+/// own sort_order doesn't contaminate the computation (same-column moves).
+/// Uses direct indexing — no allocation.
+pub fn sort_neighbors(
+    tasks: &[Task],
+    filter_source: bool,
+    source_index: i32,
+    effective_index: i32,
+) -> (Option<f64>, Option<f64>) {
+    let index_of = |i: i32| -> usize {
+        let raw = i as usize;
+        if filter_source && raw >= source_index as usize {
+            raw + 1
+        } else {
+            raw
+        }
+    };
+
+    let prev = if effective_index > 0 {
+        tasks
+            .get(index_of(effective_index - 1))
+            .map(|t| t.sort_order)
+    } else {
+        None
+    };
+    let next = tasks.get(index_of(effective_index)).map(|t| t.sort_order);
+    (prev, next)
 }

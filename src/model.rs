@@ -20,14 +20,10 @@ impl TaskStatus {
             _ => None,
         }
     }
-
-    /// Columns visible on the kanban board (excludes Archived).
-    #[allow(dead_code)]
-    pub const VISIBLE: [TaskStatus; 3] =
-        [TaskStatus::Todo, TaskStatus::InProgress, TaskStatus::Done];
 }
 
 /// Full domain entity matching the `tasks` table row.
+/// Many fields are stored but only read when future CRUD UIs are implemented.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Task {
@@ -92,13 +88,4 @@ pub struct TaskCardData {
     pub due_text: String,
     pub is_overdue: bool,
     pub tags: Vec<String>,
-}
-
-/// Domain entity matching the `tags` table row.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct Tag {
-    pub id: i64,
-    pub name: String,
-    pub color: Option<String>,
 }
