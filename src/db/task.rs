@@ -9,8 +9,15 @@ pub trait TaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>>;
     fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()>;
     fn renumber_column(&self, status: TaskStatus) -> Result<()>;
-    fn insert(&self, title: &str, description: &str, due_at: Option<&str>,
-              priority: i32, parent_task_id: Option<i64>, project_id: Option<i64>) -> Result<i64>;
+    fn insert(
+        &self,
+        title: &str,
+        description: &str,
+        due_at: Option<&str>,
+        priority: i32,
+        parent_task_id: Option<i64>,
+        project_id: Option<i64>,
+    ) -> Result<i64>;
 }
 
 pub struct SqliteTaskRepository {
@@ -110,8 +117,15 @@ impl TaskRepository for SqliteTaskRepository {
         Ok(())
     }
 
-    fn insert(&self, title: &str, description: &str, due_at: Option<&str>,
-              priority: i32, parent_task_id: Option<i64>, project_id: Option<i64>) -> Result<i64> {
+    fn insert(
+        &self,
+        title: &str,
+        description: &str,
+        due_at: Option<&str>,
+        priority: i32,
+        parent_task_id: Option<i64>,
+        project_id: Option<i64>,
+    ) -> Result<i64> {
         let conn = self.conn.borrow();
 
         // Compute sort_order = MAX(sort_order) + 1000 for Todo column
@@ -559,7 +573,9 @@ mod tests {
     #[test]
     fn insert_creates_task_in_todo_column() {
         let (repo, _conn) = setup_in_memory();
-        let id = repo.insert("new task", "desc", None, 2, None, None).unwrap();
+        let id = repo
+            .insert("new task", "desc", None, 2, None, None)
+            .unwrap();
         assert!(id > 0);
         let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(todos.len(), 1);
@@ -577,7 +593,7 @@ mod tests {
         repo.insert("new", "", None, 0, None, None).unwrap();
         let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(todos.len(), 2);
-        assert_eq!(todos[0].sort_order, 500.0);  // existing
+        assert_eq!(todos[0].sort_order, 500.0); // existing
         assert_eq!(todos[1].sort_order, 1500.0); // new = 500 + 1000
     }
 }

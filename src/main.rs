@@ -191,16 +191,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
 
-        api.on_add_task(move |title, description, due_at, priority, parent_task_id_str, project_id_str| {
-            let due = if due_at.is_empty() { None } else { Some(due_at.as_str()) };
-            let parent: Option<i64> = parent_task_id_str.parse().ok();
-            let project: Option<i64> = project_id_str.parse().ok();
-            let _ = task_repo.insert(&title, &description, due, priority, parent, project);
-            if let Some(ui) = ui_weak.upgrade() {
-                rebuild_and_set_column(&*task_repo, &*tag_repo, TaskStatus::Todo, &ui);
-                ui.set_show_add_task_dialog(false);
-            }
-        });
+        api.on_add_task(
+            move |title, description, due_at, priority, parent_task_id_str, project_id_str| {
+                let due = if due_at.is_empty() {
+                    None
+                } else {
+                    Some(due_at.as_str())
+                };
+                let parent: Option<i64> = parent_task_id_str.parse().ok();
+                let project: Option<i64> = project_id_str.parse().ok();
+                let _ = task_repo.insert(&title, &description, due, priority, parent, project);
+                if let Some(ui) = ui_weak.upgrade() {
+                    rebuild_and_set_column(&*task_repo, &*tag_repo, TaskStatus::Todo, &ui);
+                    ui.set_show_add_task_dialog(false);
+                }
+            },
+        );
     }
 
     // --- Run ---

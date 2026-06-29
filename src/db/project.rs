@@ -1,12 +1,18 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 
 use crate::model::Project;
 
 pub trait ProjectRepository {
-    fn insert(&self, name: &str, description: &str, manager: &str, color: Option<&str>) -> Result<i64>;
+    fn insert(
+        &self,
+        name: &str,
+        description: &str,
+        manager: &str,
+        color: Option<&str>,
+    ) -> Result<i64>;
     #[allow(dead_code)]
     fn load_all(&self) -> Result<Vec<Project>>;
 }
@@ -22,7 +28,13 @@ impl SqliteProjectRepository {
 }
 
 impl ProjectRepository for SqliteProjectRepository {
-    fn insert(&self, name: &str, description: &str, manager: &str, color: Option<&str>) -> Result<i64> {
+    fn insert(
+        &self,
+        name: &str,
+        description: &str,
+        manager: &str,
+        color: Option<&str>,
+    ) -> Result<i64> {
         let conn = self.conn.borrow();
         conn.execute(
             "INSERT INTO projects (name, description, manager, color, created_at, updated_at)
@@ -73,11 +85,14 @@ mod tests {
     fn insert_and_load_projects() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
-        conn.execute_batch(include_str!("../../sql/schema.sql")).unwrap();
+        conn.execute_batch(include_str!("../../sql/schema.sql"))
+            .unwrap();
         let conn_rc = Rc::new(RefCell::new(conn));
         let repo = SqliteProjectRepository::new(conn_rc);
 
-        let id = repo.insert("test", "desc", "manager", Some("#fff")).unwrap();
+        let id = repo
+            .insert("test", "desc", "manager", Some("#fff"))
+            .unwrap();
         assert!(id > 0);
 
         let all = repo.load_all().unwrap();

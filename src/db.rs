@@ -14,7 +14,13 @@ use self::task::SqliteTaskRepository;
 /// Initialise the database: enable foreign keys, apply schema, auto-archive,
 /// and seed sample data if the task table is empty.
 /// Returns repository handles that share a single `Rc<RefCell<Connection>>`.
-pub fn init(path: &str) -> Result<(SqliteTaskRepository, SqliteTagRepository, SqliteProjectRepository)> {
+pub fn init(
+    path: &str,
+) -> Result<(
+    SqliteTaskRepository,
+    SqliteTagRepository,
+    SqliteProjectRepository,
+)> {
     let conn = Connection::open(path)?;
 
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
