@@ -9,6 +9,8 @@ pub trait TaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>>;
     fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()>;
     fn renumber_column(&self, status: TaskStatus) -> Result<()>;
+    fn insert(&self, title: &str, description: &str, due_at: Option<&str>,
+              priority: i32, parent_task_id: Option<i64>, project_id: Option<i64>) -> Result<i64>;
 }
 
 pub struct SqliteTaskRepository {
@@ -106,6 +108,27 @@ impl TaskRepository for SqliteTaskRepository {
         }
         conn.execute_batch("COMMIT")?;
         Ok(())
+    }
+
+    fn insert(&self, title: &str, description: &str, due_at: Option<&str>,
+              priority: i32, parent_task_id: Option<i64>, project_id: Option<i64>) -> Result<i64> {
+        let conn = self.conn.borrow();
+
+        // Compute sort_order = MAX(sort_order) + 1000 for Todo column
+        let max_order: f64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), 0.0) FROM tasks WHERE deleted_at IS NULL AND status = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        conn.execute(
+            "INSERT INTO tasks (title, description, status, priority, sort_order, due_at, parent_task_id, project_id, created_at, updated_at)
+             VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now'))",
+            params![title, description, priority, max_order + 1000.0, due_at, parent_task_id, project_id],
+        )?;
+        Ok(conn.last_insert_rowid())
     }
 }
 

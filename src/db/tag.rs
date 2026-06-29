@@ -2,12 +2,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, params};
 
 pub trait TagRepository {
     /// Load tag names for a batch of task IDs.
     /// Returns a map from task_id to its tag name list.
     fn load_for_tasks(&self, task_ids: &[i64]) -> Result<HashMap<i64, Vec<String>>>;
+    fn insert(&self, name: &str, color: Option<&str>) -> Result<i64>;
 }
 
 pub struct SqliteTagRepository {
@@ -53,6 +54,15 @@ impl TagRepository for SqliteTagRepository {
             result.entry(task_id).or_default().push(tag_name);
         }
         Ok(result)
+    }
+
+    fn insert(&self, name: &str, color: Option<&str>) -> Result<i64> {
+        let conn = self.conn.borrow();
+        conn.execute(
+            "INSERT INTO tags (name, color) VALUES (?1, ?2)",
+            params![name, color],
+        )?;
+        Ok(conn.last_insert_rowid())
     }
 }
 
