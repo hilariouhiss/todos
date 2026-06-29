@@ -30,7 +30,7 @@ struct DragPayload {
 
 fn main() -> Result<(), Box<dyn Error>> {
     // --- Database init ---
-    let (task_repo, tag_repo) = db::init("todos.db")?;
+    let (task_repo, tag_repo, _project_repo) = db::init("todos.db")?;
 
     // --- Create UI ---
     let ui = MainWindow::new()?;

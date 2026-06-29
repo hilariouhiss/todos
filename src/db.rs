@@ -7,13 +7,14 @@ use std::rc::Rc;
 
 use rusqlite::{Connection, Result};
 
+use self::project::SqliteProjectRepository;
 use self::tag::SqliteTagRepository;
 use self::task::SqliteTaskRepository;
 
 /// Initialise the database: enable foreign keys, apply schema, auto-archive,
 /// and seed sample data if the task table is empty.
 /// Returns repository handles that share a single `Rc<RefCell<Connection>>`.
-pub fn init(path: &str) -> Result<(SqliteTaskRepository, SqliteTagRepository)> {
+pub fn init(path: &str) -> Result<(SqliteTaskRepository, SqliteTagRepository, SqliteProjectRepository)> {
     let conn = Connection::open(path)?;
 
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -31,7 +32,8 @@ pub fn init(path: &str) -> Result<(SqliteTaskRepository, SqliteTagRepository)> {
 
     let conn_rc = Rc::new(RefCell::new(conn));
     let task_repo = SqliteTaskRepository::new(conn_rc.clone());
-    let tag_repo = SqliteTagRepository::new(conn_rc);
+    let tag_repo = SqliteTagRepository::new(conn_rc.clone());
+    let project_repo = SqliteProjectRepository::new(conn_rc);
 
-    Ok((task_repo, tag_repo))
+    Ok((task_repo, tag_repo, project_repo))
 }
