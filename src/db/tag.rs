@@ -55,3 +55,94 @@ impl TagRepository for SqliteTagRepository {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use rusqlite::Connection;
+
+    fn setup_in_memory() -> (SqliteTagRepository, Rc<RefCell<Connection>>) {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn.execute_batch(include_str!("../../sql/schema.sql"))
+            .unwrap();
+
+        // Insert sample tags and task_tags
+        conn.execute_batch(
+            "INSERT INTO tags (id, name) VALUES (1, 'ui'), (2, 'bug'), (3, 'docs');
+             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
+             VALUES (1, 't1', 0, 1000.0, datetime('now'), datetime('now'));
+             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
+             VALUES (2, 't2', 0, 2000.0, datetime('now'), datetime('now'));
+             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
+             VALUES (3, 't3', 0, 3000.0, datetime('now'), datetime('now'));
+             INSERT INTO task_tags (tag_id, task_id) VALUES (1, 1), (2, 1), (2, 2);",
+        )
+        .unwrap();
+
+        let conn_rc = Rc::new(RefCell::new(conn));
+        let repo = SqliteTagRepository::new(conn_rc.clone());
+        (repo, conn_rc)
+    }
+
+    #[test]
+    fn load_for_tasks_empty_input() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn load_for_tasks_single_task_with_tags() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[1]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result.get(&1).unwrap(),
+            &vec!["bug".to_string(), "ui".to_string()]
+        );
+    }
+
+    #[test]
+    fn load_for_tasks_single_task_with_one_tag() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[2]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get(&2).unwrap(), &vec!["bug".to_string()]);
+    }
+
+    #[test]
+    fn load_for_tasks_task_with_no_tags() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[3]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn load_for_tasks_multiple_tasks() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[1, 2, 3]).unwrap();
+        assert_eq!(result.len(), 2); // Only task 1 and 2 have tags
+        assert_eq!(result.get(&1).unwrap().len(), 2);
+        assert_eq!(result.get(&2).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn load_for_tasks_orders_tags_alphabetically() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[1]).unwrap();
+        let tags = result.get(&1).unwrap();
+        assert_eq!(tags[0], "bug");
+        assert_eq!(tags[1], "ui");
+    }
+
+    #[test]
+    fn load_for_tasks_nonexistent_ids() {
+        let (repo, _conn) = setup_in_memory();
+        let result = repo.load_for_tasks(&[999]).unwrap();
+        assert!(result.is_empty());
+    }
+}
