@@ -555,4 +555,29 @@ mod tests {
         let (repo, _conn) = setup_in_memory();
         repo.renumber_column(TaskStatus::Todo).unwrap();
     }
+
+    #[test]
+    fn insert_creates_task_in_todo_column() {
+        let (repo, _conn) = setup_in_memory();
+        let id = repo.insert("new task", "desc", None, 2, None, None).unwrap();
+        assert!(id > 0);
+        let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].title, "new task");
+        assert_eq!(todos[0].priority, 2);
+    }
+
+    #[test]
+    fn insert_sets_sort_order_after_last() {
+        let (repo, conn) = setup_in_memory();
+        {
+            let c = conn.borrow();
+            insert_task(&c, 1, "existing", 0, 0, 500.0);
+        }
+        repo.insert("new", "", None, 0, None, None).unwrap();
+        let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].sort_order, 500.0);  // existing
+        assert_eq!(todos[1].sort_order, 1500.0); // new = 500 + 1000
+    }
 }

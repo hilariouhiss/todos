@@ -155,4 +155,11 @@ mod tests {
         let result = repo.load_for_tasks(&[999]).unwrap();
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn insert_creates_tag() {
+        let (repo, _conn) = setup_in_memory();
+        let id = repo.insert("new-tag", Some("#ff0000")).unwrap();
+        assert!(id > 0);
+    }
 }

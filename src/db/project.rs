@@ -60,3 +60,28 @@ impl ProjectRepository for SqliteProjectRepository {
         rows.collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use rusqlite::Connection;
+
+    #[test]
+    fn insert_and_load_projects() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn.execute_batch(include_str!("../../sql/schema.sql")).unwrap();
+        let conn_rc = Rc::new(RefCell::new(conn));
+        let repo = SqliteProjectRepository::new(conn_rc);
+
+        let id = repo.insert("test", "desc", "manager", Some("#fff")).unwrap();
+        assert!(id > 0);
+
+        let all = repo.load_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].name, "test");
+    }
+}
