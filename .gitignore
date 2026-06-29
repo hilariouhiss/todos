@@ -13,3 +13,6 @@ target/
 
 # Windows
 Thumbs.db
+
+# Codegraph
+.codegraph/
