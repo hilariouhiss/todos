@@ -1,13 +1,13 @@
 [package]
 name = "todos"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 slint = "1.17.0"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
 chrono = "0.4"
 
 [build-dependencies]
