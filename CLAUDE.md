@@ -29,3 +29,8 @@ This is a **Slint** (slint.dev) GUI application — a declarative, reactive UI t
 **Data flow:** UI events → callback → Rust handler updates properties → Slint reactively re-renders affected UI elements. There is no separate model or state management layer — state lives in Slint properties manipulated by Rust callbacks.
 
 **Platform note:** `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` suppresses the console window on Windows release builds so only the Slint window appears when launched from the file manager.
+
+## Tool Usage
+
+- **Context7 MCP** — Use when looking up library/framework/API documentation (Slint, Rust stdlib, crates, etc.)
+- **Codegraph** — Use FIRST for searching/navigating code within this repository (symbol search, call traces, impact analysis)
