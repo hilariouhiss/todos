@@ -152,14 +152,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             {
                 return DragAction::None;
             }
-            let new_order = task::compute_sort_order(prev_order, next_order);
-
-            if task_repo
-                .move_task(task_id, target_status, new_order)
-                .is_err()
-            {
-                return DragAction::None;
-            }
 
             // Rebuild and update UI models
             if let Some(ui) = ui_weak.upgrade() {
