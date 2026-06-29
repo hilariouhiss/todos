@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 
-use slint::{DataTransfer, ModelRc, SharedString, VecModel};
 use slint::language::DragAction;
+use slint::{DataTransfer, ModelRc, SharedString, VecModel};
 
 use db::tag::TagRepository;
 use db::task::{self, TaskRepository};
@@ -128,27 +128,38 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // Check precision and renumber if needed
             let prev_order = if effective_index > 0 {
-                target_tasks.get(effective_index as usize - 1).map(|t| t.sort_order)
+                target_tasks
+                    .get(effective_index as usize - 1)
+                    .map(|t| t.sort_order)
             } else {
                 None
             };
-            let next_order = target_tasks.get(effective_index as usize).map(|t| t.sort_order);
+            let next_order = target_tasks
+                .get(effective_index as usize)
+                .map(|t| t.sort_order);
 
             if task::sort_order_gap_too_small(prev_order, next_order) {
                 let _ = task_repo.renumber_column(target_status);
             }
 
             // Reload to get fresh sort_orders (may have changed from renumber)
-            let reloaded = task_repo.load_by_status(target_status).unwrap_or(target_tasks);
+            let reloaded = task_repo
+                .load_by_status(target_status)
+                .unwrap_or(target_tasks);
             let prev_order = if effective_index > 0 {
-                reloaded.get(effective_index as usize - 1).map(|t| t.sort_order)
+                reloaded
+                    .get(effective_index as usize - 1)
+                    .map(|t| t.sort_order)
             } else {
                 None
             };
             let next_order = reloaded.get(effective_index as usize).map(|t| t.sort_order);
             let new_order = task::compute_sort_order(prev_order, next_order);
 
-            if task_repo.move_task(task_id, target_status, new_order).is_err() {
+            if task_repo
+                .move_task(task_id, target_status, new_order)
+                .is_err()
+            {
                 return DragAction::None;
             }
 

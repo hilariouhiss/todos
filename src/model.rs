@@ -22,15 +22,14 @@ impl TaskStatus {
     }
 
     /// Columns visible on the kanban board (excludes Archived).
-    pub const VISIBLE: [TaskStatus; 3] = [
-        TaskStatus::Todo,
-        TaskStatus::InProgress,
-        TaskStatus::Done,
-    ];
+    #[allow(dead_code)]
+    pub const VISIBLE: [TaskStatus; 3] =
+        [TaskStatus::Todo, TaskStatus::InProgress, TaskStatus::Done];
 }
 
 /// Full domain entity matching the `tasks` table row.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Task {
     pub id: i64,
     pub title: String,
@@ -57,11 +56,12 @@ pub struct Task {
 impl Task {
     /// True when `due_at` is before today and the task isn't Done/Archived.
     pub fn is_overdue(&self) -> bool {
-        if let Some(due) = self.due_at {
-            if self.status != TaskStatus::Done && self.status != TaskStatus::Archived {
-                let today = chrono::Local::now().date_naive();
-                return due < today;
-            }
+        if let Some(due) = self.due_at
+            && self.status != TaskStatus::Done
+            && self.status != TaskStatus::Archived
+        {
+            let today = chrono::Local::now().date_naive();
+            return due < today;
         }
         false
     }
@@ -96,6 +96,7 @@ pub struct TaskCardData {
 
 /// Domain entity matching the `tags` table row.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Tag {
     pub id: i64,
     pub name: String,

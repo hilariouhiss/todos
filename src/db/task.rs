@@ -1,13 +1,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 
 use crate::model::{Task, TaskStatus};
 
 pub trait TaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>>;
     fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()>;
+    #[allow(dead_code)]
     fn reorder(&self, task_id: i64, sort_order: f64) -> Result<()>;
     fn renumber_column(&self, status: TaskStatus) -> Result<()>;
 }

@@ -16,3 +16,9 @@ Thumbs.db
 
 # Codegraph
 .codegraph/
+
+# Superpowers
+docs/superpowers/
+
+# SQLite database
+todos.db
