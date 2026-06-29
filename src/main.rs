@@ -10,6 +10,7 @@ use std::rc::Rc;
 use slint::language::DragAction;
 use slint::{DataTransfer, ModelRc, SharedString, VecModel};
 
+use db::project::ProjectRepository;
 use db::tag::TagRepository;
 use db::task::{self, TaskRepository};
 use model::{TaskCardData, TaskStatus};
@@ -30,7 +31,7 @@ struct DragPayload {
 
 fn main() -> Result<(), Box<dyn Error>> {
     // --- Database init ---
-    let (task_repo, tag_repo, _project_repo) = db::init("todos.db")?;
+    let (task_repo, tag_repo, project_repo) = db::init("todos.db")?;
 
     // --- Create UI ---
     let ui = MainWindow::new()?;
@@ -43,6 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // --- Wire Api callbacks ---
     let task_repo_rc = Rc::new(task_repo);
     let tag_repo_rc = Rc::new(tag_repo);
+    let project_repo_rc = Rc::new(project_repo);
     let ui_weak = ui.as_weak();
 
     let api = ui.global::<Api>();
@@ -146,6 +148,61 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    // add-tag: insert tag, reload all columns, close dialog
+    {
+        let tag_repo = tag_repo_rc.clone();
+        let task_repo = task_repo_rc.clone();
+        let tag_repo_2 = tag_repo_rc.clone();
+        let ui_weak = ui_weak.clone();
+
+        api.on_add_tag(move |name, color| {
+            let _ = tag_repo.insert(&name, if color.is_empty() { None } else { Some(&color) });
+            if let Some(ui) = ui_weak.upgrade() {
+                reload_all_columns(&*task_repo, &*tag_repo_2, &ui);
+                ui.set_show_add_tag_dialog(false);
+            }
+        });
+    }
+
+    // add-project: insert project, reload all columns, close dialog
+    {
+        let project_repo = project_repo_rc.clone();
+        let task_repo = task_repo_rc.clone();
+        let tag_repo = tag_repo_rc.clone();
+        let ui_weak = ui_weak.clone();
+
+        api.on_add_project(move |name, description, manager, color| {
+            let _ = project_repo.insert(
+                &name,
+                &description,
+                &manager,
+                if color.is_empty() { None } else { Some(&color) },
+            );
+            if let Some(ui) = ui_weak.upgrade() {
+                reload_all_columns(&*task_repo, &*tag_repo, &ui);
+                ui.set_show_add_project_dialog(false);
+            }
+        });
+    }
+
+    // add-task: insert task (goes to Todo), reload Todo column, close dialog
+    {
+        let task_repo = task_repo_rc.clone();
+        let tag_repo = tag_repo_rc.clone();
+        let ui_weak = ui_weak.clone();
+
+        api.on_add_task(move |title, description, due_at, priority, parent_task_id_str, project_id_str| {
+            let due = if due_at.is_empty() { None } else { Some(due_at.as_str()) };
+            let parent: Option<i64> = parent_task_id_str.parse().ok();
+            let project: Option<i64> = project_id_str.parse().ok();
+            let _ = task_repo.insert(&title, &description, due, priority, parent, project);
+            if let Some(ui) = ui_weak.upgrade() {
+                rebuild_and_set_column(&*task_repo, &*tag_repo, TaskStatus::Todo, &ui);
+                ui.set_show_add_task_dialog(false);
+            }
+        });
+    }
+
     // --- Run ---
     ui.run()?;
 
@@ -157,6 +214,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn extract_payload(data: Option<Rc<dyn std::any::Any>>) -> Option<DragPayload> {
     data.and_then(|rc| rc.downcast::<DragPayload>().ok())
         .map(|rc| (*rc).clone())
+}
+
+/// Reload all three columns from the database and set them on the UI.
+fn reload_all_columns(
+    task_repo: &dyn TaskRepository,
+    tag_repo: &dyn TagRepository,
+    ui: &MainWindow,
+) {
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Todo, ui);
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::InProgress, ui);
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Done, ui);
 }
 
 /// Reload tasks for `status` from the database, build a fresh `ModelRc`,

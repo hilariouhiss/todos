@@ -7,6 +7,7 @@ use crate::model::Project;
 
 pub trait ProjectRepository {
     fn insert(&self, name: &str, description: &str, manager: &str, color: Option<&str>) -> Result<i64>;
+    #[allow(dead_code)]
     fn load_all(&self) -> Result<Vec<Project>>;
 }
 
