@@ -8,12 +8,12 @@ use std::error::Error;
 use std::rc::Rc;
 
 use slint::language::DragAction;
-use slint::{DataTransfer, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, DataTransfer, ModelRc, SharedString, VecModel};
 
 use db::project::ProjectRepository;
 use db::tag::TagRepository;
 use db::task::{self, TaskRepository};
-use model::{TaskCardData, TaskStatus};
+use model::{Settings, TaskCardData, TaskStatus};
 
 slint::include_modules!();
 
@@ -30,11 +30,23 @@ struct DragPayload {
 // ---- Entry point ----
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // --- Load settings ---
+    let settings = Settings::load();
+
     // --- Database init ---
-    let (task_repo, tag_repo, project_repo) = db::init("todos.db")?;
+    let (task_repo, tag_repo, project_repo) = db::init(
+        "todos.db",
+        settings.auto_archive_enabled,
+        settings.auto_archive_days,
+    )?;
 
     // --- Create UI ---
     let ui = MainWindow::new()?;
+
+    // Apply persisted settings to MainWindow properties
+    ui.set_theme_mode(settings.theme_mode.clone().into());
+    ui.set_auto_archive_days(settings.auto_archive_days as i32);
+    ui.set_auto_archive_enabled(settings.auto_archive_enabled);
 
     // --- Load initial column data ---
     rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Todo, &ui);
@@ -211,6 +223,57 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             },
         );
+    }
+
+    // save-settings: persist settings to settings.toml
+    {
+        let ui_weak = ui_weak.clone();
+        api.on_save_settings(move |theme_mode, days, enabled| {
+            let s = Settings {
+                theme_mode: theme_mode.to_string(),
+                auto_archive_days: days as u32,
+                auto_archive_enabled: enabled,
+            };
+            let _ = s.save();
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_show_settings_dialog(false);
+            }
+        });
+    }
+
+    // open-archived: load archived tasks and show overlay
+    {
+        let task_repo = task_repo_rc.clone();
+        let tag_repo = tag_repo_rc.clone();
+        let ui_weak = ui_weak.clone();
+
+        api.on_open_archived(move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let tasks = match task_repo.load_by_status(TaskStatus::Archived) {
+                Ok(t) => t,
+                Err(_) => return,
+            };
+            let ids: Vec<i64> = tasks.iter().map(|t| t.id).collect();
+            let tags_map = tag_repo.load_for_tasks(&ids).unwrap_or_default();
+
+            let rows: Vec<ArchivedTaskUi> = tasks
+                .iter()
+                .map(|task| {
+                    let tags = tags_map.get(&task.id).cloned().unwrap_or_default();
+                    ArchivedTaskUi {
+                        title: task.title.clone().into(),
+                        completed_at: task.completed_at.clone().unwrap_or_default().into(),
+                        archived_at: task.archived_at.clone().unwrap_or_default().into(),
+                        priority: task.priority,
+                        tags: tags.join(", ").into(),
+                    }
+                })
+                .collect();
+
+            let model: ModelRc<ArchivedTaskUi> = ModelRc::from(Rc::new(VecModel::from(rows)));
+            ui.set_archived_tasks(model);
+            ui.set_show_archived(true);
+        });
     }
 
     // --- Run ---

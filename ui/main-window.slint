@@ -1,12 +1,15 @@
 // Three-column todo kanban with drag-and-drop using Slint 1.17.0 API.
 
 import { Button } from "std-widgets.slint";
-import { TaskCardUi } from "common.slint";
+import { TaskCardUi, ThemeSettings } from "common.slint";
 import { Theme } from "theme.slint";
+import { Sidebar } from "widgets/sidebar.slint";
 import { KanbanColumn } from "widgets/kanban-column.slint";
 import { AddTagDialog } from "dialogs/add-tag-dialog.slint";
 import { AddProjectDialog } from "dialogs/add-project-dialog.slint";
 import { AddTaskDialog } from "dialogs/add-task-dialog.slint";
+import { SettingsDialog } from "dialogs/settings-dialog.slint";
+import { ArchivedTaskUi, ArchivedTasksOverlay } from "archived-tasks.slint";
 
 // ---- Rust callback bridge (in main file for Rust access via include_modules!) ----
 
@@ -18,13 +21,15 @@ export global Api {
     callback add-project(name: string, description: string, manager: string, color: string);
     callback add-task(title: string, description: string, due-at: string,
                       priority: int, parent-task-id: string, project-id: string);
+    callback open-archived();
+    callback save-settings(string, int, bool);
 }
 
 // ---- Main window ----
 
 export component MainWindow inherits Window {
     title: "Todos — Drag & Drop";
-    preferred-width: 800px;
+    preferred-width: 850px;
     preferred-height: 520px;
     background: Theme.window-bg;
 
@@ -32,77 +37,97 @@ export component MainWindow inherits Window {
     in-out property <[TaskCardUi]> doing;
     in-out property <[TaskCardUi]> done;
 
+    // User settings — two-way bound to ThemeSettings global.
+    // Rust sets these; Theme.dark reacts; settings dialog reads/writes the globals directly.
+    in-out property <string> theme-mode <=> ThemeSettings.theme-mode;
+    in-out property <int> auto-archive-days <=> ThemeSettings.auto-archive-days;
+    in-out property <bool> auto-archive-enabled <=> ThemeSettings.auto-archive-enabled;
+
     // Dialog visibility
     in-out property <bool> show-add-tag-dialog: false;
     in-out property <bool> show-add-project-dialog: false;
     in-out property <bool> show-add-task-dialog: false;
+    in-out property <bool> show-settings-dialog: false;
+    in-out property <bool> show-archived: false;
+    in-out property <[ArchivedTaskUi]> archived-tasks: [];
 
-    VerticalLayout {
-        padding: 16px;
-        spacing: 12px;
+    HorizontalLayout {
+        spacing: 0;
 
-        // Header bar: hint text + add buttons
-        HorizontalLayout {
-            spacing: 8px;
-            alignment: start;
-
-            Text {
-                text: "拖拽卡片到不同列以修改任务状态";
-                font-size: 14px;
-                color: Theme.text-secondary;
-                vertical-alignment: center;
-            }
-
-            // Spacer to push buttons right
-            Rectangle { horizontal-stretch: 1; }
-
-            Button {
-                text: "+标签";
-                clicked => { root.show-add-tag-dialog = true; }
-            }
-            Button {
-                text: "+项目";
-                clicked => { root.show-add-project-dialog = true; }
-            }
-            Button {
-                text: "+任务";
-                clicked => { root.show-add-task-dialog = true; }
-            }
+        // ---- Left sidebar ----
+        Sidebar {
+            settings-clicked => { root.show-settings-dialog = true; }
+            archive-clicked => { Api.open-archived(); }
         }
 
-        // Kanban columns
-        HorizontalLayout {
+        // ---- Main content area ----
+        VerticalLayout {
+            padding: 16px;
             spacing: 12px;
-            alignment: stretch;
 
-            KanbanColumn {
-                title: "📋 待办";
-                column-id: 0;
-                tasks: root.todo;
-                accent: Theme.dark ? #e3b341 : #d29922;
-                can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
-                dropped-event(event, col, idx) => Api.dropped(event, col, idx);
-                make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
+            // Header bar: hint text + add buttons
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                Text {
+                    text: "拖拽卡片到不同列以修改任务状态";
+                    font-size: 14px;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                // Spacer to push buttons right
+                Rectangle { horizontal-stretch: 1; }
+
+                Button {
+                    text: "+标签";
+                    clicked => { root.show-add-tag-dialog = true; }
+                }
+                Button {
+                    text: "+项目";
+                    clicked => { root.show-add-project-dialog = true; }
+                }
+                Button {
+                    text: "+任务";
+                    clicked => { root.show-add-task-dialog = true; }
+                }
             }
 
-            KanbanColumn {
-                title: "🔄 进行中";
-                column-id: 1;
-                tasks: root.doing;
-                accent: Theme.dark ? #58a6ff : #1f6feb;
-                can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
-                dropped-event(event, col, idx) => Api.dropped(event, col, idx);
-                make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
-            }
+            // Kanban columns
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: stretch;
 
-            KanbanColumn {
-                title: "✅ 已完成";
-                column-id: 2;
-                tasks: root.done;
-                accent: Theme.dark ? #3fb950 : #1a7f37;
-                can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
-                dropped-event(event, col, idx) => Api.dropped(event, col, idx);
-                make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
+                KanbanColumn {
+                    title: "📋 待办";
+                    column-id: 0;
+                    tasks: root.todo;
+                    accent: Theme.dark ? #e3b341 : #d29922;
+                    can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
+                    dropped-event(event, col, idx) => Api.dropped(event, col, idx);
+                    make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
+                }
+
+                KanbanColumn {
+                    title: "🔄 进行中";
+                    column-id: 1;
+                    tasks: root.doing;
+                    accent: Theme.dark ? #58a6ff : #1f6feb;
+                    can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
+                    dropped-event(event, col, idx) => Api.dropped(event, col, idx);
+                    make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
+                }
+
+                KanbanColumn {
+                    title: "✅ 已完成";
+                    column-id: 2;
+                    tasks: root.done;
+                    accent: Theme.dark ? #3fb950 : #1a7f37;
+                    can-drop-event(event, col, idx) => Api.can-drop(event, col, idx);
+                    dropped-event(event, col, idx) => Api.dropped(event, col, idx);
+                    make-data(task-id, col, idx) => Api.make-data(task-id, col, idx);
+                }
             }
         }
     }
@@ -134,5 +159,24 @@ export component MainWindow inherits Window {
                 task-prio, task-parent, task-proj);
             root.show-add-task-dialog = false;
         }
+    }
+
+    // ---- Settings Dialog ----
+    if root.show-settings-dialog: SettingsDialog {
+        cancel => { root.show-settings-dialog = false; }
+        confirm => {
+            Api.save-settings(
+                ThemeSettings.theme-mode,
+                ThemeSettings.auto-archive-days,
+                ThemeSettings.auto-archive-enabled
+            );
+            root.show-settings-dialog = false;
+        }
+    }
+
+    // ---- Archived Tasks Overlay ----
+    if root.show-archived: ArchivedTasksOverlay {
+        tasks: root.archived-tasks;
+        close => { root.show-archived = false; }
     }
 }
