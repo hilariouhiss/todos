@@ -14,6 +14,9 @@ export global ThemeSettings {
     in-out property <bool> doing-sort-ascending: true;
     in-out property <int> done-sort-field: 1;
     in-out property <bool> done-sort-ascending: true;
+
+    // Close behavior: "" (unset — show dialog), "quit", "minimize_to_tray"
+    in-out property <string> close-behavior: "";
 }
 
 // ---- Card data struct (matches Rust-side TaskCardData) ----

@@ -1,0 +1,102 @@
+import { CheckBox } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { DialogCard, DialogHeader } from "../widgets/dialog-shell.slint";
+
+// ---- Close behavior confirmation dialog ----
+// Shown on first window close when the user hasn't set a preference yet.
+
+export component CloseBehaviorDialog inherits Rectangle {
+    callback cancel();
+    callback minimize-to-tray(dont-ask-again: bool);
+    callback quit-app(dont-ask-again: bool);
+
+    x: 0; y: 0; width: 100%; height: 100%;
+    background: #00000044;
+    TouchArea { }
+
+    in-out property <bool> dont-ask-again: false;
+
+    DialogCard {
+        width: 360px; height: 260px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        body := VerticalLayout {
+            x: 0; y: 0; width: 100%; height: 100%;
+            padding: 20px; spacing: 16px;
+
+            DialogHeader {
+                title: "关闭行为";
+                close => { root.cancel(); }
+            }
+
+            Text {
+                text: "请选择关闭窗口时的行为：";
+                font-size: 14px;
+                color: Theme.text-secondary;
+            }
+
+            // "不再询问" checkbox
+            HorizontalLayout {
+                spacing: 6px;
+                CheckBox {
+                    checked <=> root.dont-ask-again;
+                }
+                Text {
+                    text: "不再询问";
+                    font-size: 13px;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Spacer to push buttons to bottom
+            Rectangle { vertical-stretch: 1; }
+
+            // Buttons row
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                // "彻底关闭" button
+                Rectangle {
+                    height: 36px;
+                    min-width: 100px;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: Theme.card-border;
+                    background: Theme.card-bg;
+                    TouchArea {
+                        clicked => { root.quit-app(root.dont-ask-again); }
+                        Text {
+                            text: "彻底关闭";
+                            font-size: 14px;
+                            color: Theme.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // "最小化到托盘" button (primary / default)
+                Rectangle {
+                    height: 36px;
+                    min-width: 120px;
+                    border-radius: 6px;
+                    background: #1f6feb;
+                    TouchArea {
+                        clicked => { root.minimize-to-tray(root.dont-ask-again); }
+                        Text {
+                            text: "最小化到托盘";
+                            font-size: 14px;
+                            font-weight: 600;
+                            color: #ffffff;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

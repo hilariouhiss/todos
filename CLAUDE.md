@@ -19,8 +19,15 @@ This is a **Slint** (slint.dev) GUI application — a declarative, reactive UI t
 
 ### Build pipeline
 
-1. `build.rs` calls `slint_build::compile("ui/main-window.slint")`, which compiles the entire Slint UI tree (main-window.slint imports all files under `ui/widgets/` and `ui/dialogs/`) into Rust code at build time.
-2. `src/main.rs` imports the generated code via `slint::include_modules!()` and instantiates `MainWindow` (the root Slint component).
+1. `build.rs` compiles two entry points: `ui/tray.slint` (standalone `SystemTrayIcon` component) then `ui/main-window.slint` (main window + all imports).
+2. `src/main.rs` includes both generated files manually:
+
+   ```rust
+   include!(concat!(env!("OUT_DIR"), "/tray.rs"));
+   include!(concat!(env!("OUT_DIR"), "/main-window.rs"));
+   ```
+
+   `slint::include_modules!()` only picks up the last-compiled file (it reads env `SLINT_INCLUDE_GENERATED` which each `compile()` call overwrites).
 
 ### UI layer (`ui/`)
 
@@ -40,7 +47,7 @@ MainWindow (Window)
       Header bar (title + buttons: +tag, +project, +task)
       Three KanbanColumn instances (todo / doing / done)
   // Conditional overlays:
-  AddTagDialog | AddProjectDialog | AddTaskDialog | SettingsDialog | ArchivedTasksOverlay
+  CloseBehaviorDialog | AddTagDialog | AddProjectDialog | AddTaskDialog | SettingsDialog | ArchivedTasksOverlay
 ```
 
 **Key Slint patterns:**
@@ -64,7 +71,7 @@ Entry point that orchestrates the entire application:
    - `on_add_tag` / `on_add_project` / `on_add_task` — create entities, reload affected columns, close dialog.
    - `on_save_settings` — builds `Settings` from UI state, persists to `settings.toml`, reloads all columns.
    - `on_open_archived` — loads archived tasks (status=3), shows the archived overlay.
-6. **Runs event loop** via `ui.run()`.
+6. **Runs event loop** via `ui.show()` then `slint::run_event_loop_until_quit()` — keeps running when window is hidden to tray (unlike `ui.run()` which exits when the last window closes).
 
 Uses `ui.as_weak()` for safe callback capture (prevents the UI from being kept alive by closures).
 
@@ -122,6 +129,7 @@ Repository pattern — each entity has a trait and a SQLite implementation shari
     theme_mode: String,            // "system" (default), "light", or "dark"
     auto_archive_enabled: bool,    // default true
     auto_archive_days: u32,        // default 7; 0 = archive immediately
+    close_behavior: String,        // "" (unset, prompt), "quit", "minimize_to_tray"
     column_sort: ColumnSortSettings,  // per-column SortConfig
 }
 ```
@@ -148,6 +156,16 @@ State is re-derived from the database on every change; there is no in-memory cac
 ### Platform note
 
 `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` suppresses the console window on Windows release builds so only the Slint window appears when launched from the file manager.
+
+### Slint gotchas
+
+- **`SystemTrayIcon` compilation**: Must be compiled as a separate entry point in `build.rs` — it's not a window child. A single `compile()` call won't generate its type.
+- **Property constant-folding**: Inherited properties (e.g., `SystemTrayIcon.icon`) not referenced in any Slint binding compile to `set_constant()` — no Rust setter is generated. Set the value in Slint (`icon: @image-url("...")`) instead.
+- **Tray icon needs valid image**: Empty/default `image` fails with "Failed to create rgba8 buffer" on Windows. Provide a real PNG.
+- **`Window` close interception**: `Window::on_close_requested()` is a **Rust** API returning `CloseRequestResponse`. Slint-level `close-requested` callback is not available in all versions.
+- **Slint callback param syntax**: `name: type` (e.g., `dont-ask-again: bool`), NOT `type name`.
+- **Slint callback string args**: Slint `string` arrives as `SharedString` in Rust — borrow with `&s` or call `.as_str()`.
+- **Saving one settings field**: `build_settings(&ui).save()` snapshots ALL UI state. No partial-update API — just call `ui.set_*()` then save.
 
 ### Key dependencies
 

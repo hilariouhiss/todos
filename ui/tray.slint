@@ -1,0 +1,25 @@
+// System tray icon — always visible while the app is running.
+
+export component AppTrayIcon inherits SystemTrayIcon {
+    icon: @image-url("../assets/tray-icon.png");
+    tooltip: "Todos";
+
+    callback show-window();
+    callback open-settings();
+    callback quit-application();
+
+    Menu {
+        MenuItem {
+            title: "显示窗口";
+            activated => { root.show-window(); }
+        }
+        MenuItem {
+            title: "设置";
+            activated => { root.open-settings(); }
+        }
+        MenuItem {
+            title: "退出";
+            activated => { root.quit-application(); }
+        }
+    }
+}

@@ -8,7 +8,7 @@ use std::error::Error;
 use std::rc::Rc;
 
 use slint::language::DragAction;
-use slint::{ComponentHandle, DataTransfer, ModelRc, SharedString, VecModel};
+use slint::{CloseRequestResponse, ComponentHandle, DataTransfer, ModelRc, SharedString, VecModel};
 
 use db::project::ProjectRepository;
 use db::tag::TagRepository;
@@ -16,7 +16,10 @@ use db::task::{self, TaskRepository};
 use model::sort::sort_tasks;
 use model::{ColumnSortSettings, Settings, SortConfig, SortField, TaskCardData, TaskStatus};
 
-slint::include_modules!();
+// include_modules!() only picks up the last-compiled file via SLINT_INCLUDE_GENERATED.
+// We compile two entry points (tray.slint and main-window.slint), so include both manually.
+include!(concat!(env!("OUT_DIR"), "/tray.rs"));
+include!(concat!(env!("OUT_DIR"), "/main-window.rs"));
 
 // ---- Drag payload ----
 
@@ -56,6 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_doing_sort_ascending(settings.sort_ascending(TaskStatus::InProgress));
     ui.set_done_sort_field(settings.sort_field_index(TaskStatus::Done));
     ui.set_done_sort_ascending(settings.sort_ascending(TaskStatus::Done));
+    ui.set_close_behavior(settings.close_behavior.clone().into());
 
     // --- Load initial column data ---
     rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Todo, &ui);
@@ -254,6 +258,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    // save-close-behavior: persist close behavior and act on it
+    {
+        let ui_weak = ui_weak.clone();
+        api.on_save_close_behavior(move |behavior_str, dont_ask_again| {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let behavior = if dont_ask_again {
+                behavior_str.to_string()
+            } else {
+                // If "don't ask again" not checked, act but don't persist
+                // (we don't persist anything, keeping close_behavior = "" so dialog shows next time)
+                String::new()
+            };
+
+            if !behavior.is_empty() {
+                ui.set_close_behavior(behavior.clone().into());
+                let _ = build_settings(&ui).save();
+            }
+
+            execute_close_behavior(&ui, &behavior_str);
+        });
+    }
+
     // open-archived: load archived tasks and show overlay
     {
         let task_repo = task_repo_rc.clone();
@@ -289,8 +315,48 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    // --- System tray ---
+    let tray = AppTrayIcon::new()?;
+    {
+        let ui_weak = ui_weak.clone();
+        tray.on_show_window(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.window().show().ok();
+            }
+        });
+    }
+    {
+        let ui_weak = ui_weak.clone();
+        tray.on_open_settings(move || {
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.window().show().ok();
+                ui.set_show_settings_dialog(true);
+            }
+        });
+    }
+    tray.on_quit_application(|| {
+        slint::quit_event_loop().ok();
+    });
+
+    // --- Window close interception ---
+    {
+        let ui_weak = ui_weak.clone();
+        ui.window().on_close_requested(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return CloseRequestResponse::HideWindow;
+            };
+            let behavior = ui.get_close_behavior();
+            execute_close_behavior(&ui, &behavior)
+        });
+    }
+
     // --- Run ---
-    ui.run()?;
+    // Show the window explicitly (ui.run() usually does this, but we use the
+    // free function to keep running when the window is hidden to tray).
+    ui.show()?;
+    // Use run_event_loop_until_quit to keep running even when all windows
+    // are hidden (the tray icon keeps the event loop alive).
+    slint::run_event_loop_until_quit()?;
 
     Ok(())
 }
@@ -322,12 +388,33 @@ fn can_reorder_in_column(ui_weak: &slint::Weak<MainWindow>, status: TaskStatus) 
     get_sort_config(&ui, status).field == SortField::Manual
 }
 
+/// Execute the action for a given close-behavior string.
+/// Returns the appropriate response for `on_close_requested`.
+fn execute_close_behavior(ui: &MainWindow, behavior: &str) -> CloseRequestResponse {
+    match behavior {
+        "quit" => {
+            slint::quit_event_loop().ok();
+            CloseRequestResponse::HideWindow
+        }
+        "minimize_to_tray" => {
+            ui.window().hide().ok();
+            CloseRequestResponse::KeepWindowShown
+        }
+        _ => {
+            // Unset — show the close behavior dialog
+            ui.set_show_close_behavior_dialog(true);
+            CloseRequestResponse::KeepWindowShown
+        }
+    }
+}
+
 /// Build a `Settings` snapshot from the current MainWindow property values.
 fn build_settings(ui: &MainWindow) -> Settings {
     Settings {
         theme_mode: ui.get_theme_mode().to_string(),
         auto_archive_days: ui.get_auto_archive_days() as u32,
         auto_archive_enabled: ui.get_auto_archive_enabled(),
+        close_behavior: ui.get_close_behavior().to_string(),
         column_sort: ColumnSortSettings {
             todo: get_sort_config(ui, TaskStatus::Todo),
             in_progress: get_sort_config(ui, TaskStatus::InProgress),

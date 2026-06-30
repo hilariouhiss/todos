@@ -47,6 +47,10 @@ export component SettingsDialog inherits Rectangle {
         : ThemeSettings.theme-mode == "dark" ? 2 : 0;
     in-out property <string> days-text: ThemeSettings.auto-archive-days;
 
+    // Close behavior: "" (unset / ask every time), "quit", "minimize_to_tray"
+    property <int> close-behavior-index: ThemeSettings.close-behavior == "quit" ? 1
+        : ThemeSettings.close-behavior == "minimize_to_tray" ? 2 : 0;
+
     // Sort combo indices — initialized from ThemeSettings, written back on confirm.
     property <int> todo-sort-index: ThemeSettings.todo-sort-field;
     property <int> doing-sort-index: ThemeSettings.doing-sort-field;
@@ -58,7 +62,7 @@ export component SettingsDialog inherits Rectangle {
     property <bool> done-asc: ThemeSettings.done-sort-ascending;
 
     DialogCard {
-        width: 360px; height: 530px;
+        width: 360px; height: 600px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
 
@@ -105,6 +109,19 @@ export component SettingsDialog inherits Rectangle {
                 }
             }
 
+            // Close behavior
+            VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "关闭窗口行为";
+                    color: Theme.text-secondary;
+                }
+                ComboBox {
+                    model: ["每次询问", "彻底关闭", "最小化到托盘"];
+                    current-index <=> root.close-behavior-index;
+                }
+            }
+
             // Column sort configuration
             VerticalLayout {
                 spacing: 8px;
@@ -127,6 +144,10 @@ export component SettingsDialog inherits Rectangle {
                     ThemeSettings.theme-mode = root.theme-index == 0 ? "system"
                         : root.theme-index == 1 ? "light" : "dark";
                     ThemeSettings.auto-archive-days = root.days-text.to-float();
+
+                    // Write close behavior
+                    ThemeSettings.close-behavior = root.close-behavior-index == 0 ? ""
+                        : root.close-behavior-index == 1 ? "quit" : "minimize_to_tray";
 
                     // Write sort field indices back to ThemeSettings
                     ThemeSettings.todo-sort-field = root.todo-sort-index;

@@ -35,6 +35,11 @@ pub struct Settings {
     #[serde(default = "default_auto_archive_days")]
     pub auto_archive_days: u32,
 
+    /// Close behavior: "" (unset — prompt on first close),
+    /// `"quit"` (exit application), or `"minimize_to_tray"` (hide to tray).
+    #[serde(default = "default_close_behavior")]
+    pub close_behavior: String,
+
     /// Per-column sort configuration.
     #[serde(default)]
     pub column_sort: ColumnSortSettings,
@@ -49,6 +54,9 @@ fn default_auto_archive_enabled() -> bool {
 fn default_auto_archive_days() -> u32 {
     DEFAULT_AUTO_ARCHIVE_DAYS
 }
+fn default_close_behavior() -> String {
+    String::new()
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -56,6 +64,7 @@ impl Default for Settings {
             theme_mode: default_theme_mode(),
             auto_archive_enabled: default_auto_archive_enabled(),
             auto_archive_days: default_auto_archive_days(),
+            close_behavior: default_close_behavior(),
             column_sort: ColumnSortSettings::default(),
         }
     }

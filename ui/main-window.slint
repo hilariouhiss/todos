@@ -9,6 +9,7 @@ import { AddTagDialog } from "dialogs/add-tag-dialog.slint";
 import { AddProjectDialog } from "dialogs/add-project-dialog.slint";
 import { AddTaskDialog } from "dialogs/add-task-dialog.slint";
 import { SettingsDialog } from "dialogs/settings-dialog.slint";
+import { CloseBehaviorDialog } from "dialogs/close-behavior-dialog.slint";
 import { ArchivedTaskUi, ArchivedTasksOverlay } from "archived-tasks.slint";
 
 // ---- Rust callback bridge (in main file for Rust access via include_modules!) ----
@@ -23,6 +24,7 @@ export global Api {
                       priority: int, parent-task-id: string, project-id: string);
     callback open-archived();
     callback save-settings();
+    callback save-close-behavior(behavior: string, dont-ask-again: bool);
 }
 
 // ---- Main window ----
@@ -42,6 +44,7 @@ export component MainWindow inherits Window {
     in-out property <string> theme-mode <=> ThemeSettings.theme-mode;
     in-out property <int> auto-archive-days <=> ThemeSettings.auto-archive-days;
     in-out property <bool> auto-archive-enabled <=> ThemeSettings.auto-archive-enabled;
+    in-out property <string> close-behavior <=> ThemeSettings.close-behavior;
 
     // Per-column sort config — two-way bound to ThemeSettings.
     in-out property <int> todo-sort-field <=> ThemeSettings.todo-sort-field;
@@ -56,6 +59,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show-add-project-dialog: false;
     in-out property <bool> show-add-task-dialog: false;
     in-out property <bool> show-settings-dialog: false;
+    in-out property <bool> show-close-behavior-dialog: false;
     in-out property <bool> show-archived: false;
     in-out property <[ArchivedTaskUi]> archived-tasks: [];
 
@@ -169,6 +173,19 @@ export component MainWindow inherits Window {
             Api.add-task(task-title, task-desc, task-due,
                 task-prio, task-parent, task-proj);
             root.show-add-task-dialog = false;
+        }
+    }
+
+    // ---- Close Behavior Dialog ----
+    if root.show-close-behavior-dialog: CloseBehaviorDialog {
+        cancel => { root.show-close-behavior-dialog = false; }
+        minimize-to-tray(dont-ask-again) => {
+            Api.save-close-behavior("minimize_to_tray", dont-ask-again);
+            root.show-close-behavior-dialog = false;
+        }
+        quit-app(dont-ask-again) => {
+            Api.save-close-behavior("quit", dont-ask-again);
+            root.show-close-behavior-dialog = false;
         }
     }
 
