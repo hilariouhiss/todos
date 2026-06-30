@@ -79,7 +79,7 @@ impl Settings {
 
     /// Build the Slint ThemeSettings ascending bool for a column.
     pub fn sort_ascending(&self, status: TaskStatus) -> bool {
-        self.column_sort_config(status).direction.to_bool()
+        self.column_sort_config(status).direction
     }
 }
 

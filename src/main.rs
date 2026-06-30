@@ -14,9 +14,7 @@ use db::project::ProjectRepository;
 use db::tag::TagRepository;
 use db::task::{self, TaskRepository};
 use model::sort::sort_tasks;
-use model::{
-    ColumnSortSettings, Settings, SortConfig, SortDirection, SortField, TaskCardData, TaskStatus,
-};
+use model::{ColumnSortSettings, Settings, SortConfig, SortField, TaskCardData, TaskStatus};
 
 slint::include_modules!();
 
@@ -130,11 +128,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     return DragAction::None;
                 }
                 // Block same-column reordering when sort is not manual
-                if let Some(ui) = ui_weak.upgrade() {
-                    let config = get_sort_config(&ui, target_status);
-                    if config.field != SortField::Manual {
-                        return DragAction::None;
-                    }
+                if !can_reorder_in_column(&ui_weak, target_status) {
+                    return DragAction::None;
                 }
             }
 
@@ -253,17 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         api.on_save_settings(move || {
             let Some(ui) = ui_weak.upgrade() else { return };
-            let s = Settings {
-                theme_mode: ui.get_theme_mode().to_string(),
-                auto_archive_days: ui.get_auto_archive_days() as u32,
-                auto_archive_enabled: ui.get_auto_archive_enabled(),
-                column_sort: ColumnSortSettings {
-                    todo: get_sort_config(&ui, TaskStatus::Todo),
-                    in_progress: get_sort_config(&ui, TaskStatus::InProgress),
-                    done: get_sort_config(&ui, TaskStatus::Done),
-                },
-            };
-            let _ = s.save();
+            let _ = build_settings(&ui).save();
             reload_all_columns(&*task_repo, &*tag_repo, &ui);
             ui.set_show_settings_dialog(false);
         });
@@ -323,7 +308,31 @@ fn get_sort_config(ui: &MainWindow, status: TaskStatus) -> SortConfig {
     };
     SortConfig {
         field: SortField::from_i32(field),
-        direction: SortDirection::from_bool(ascending),
+        direction: ascending,
+    }
+}
+
+/// Check whether same-column drag reordering is allowed for a column.
+/// Returns `false` when the column's sort mode is not Manual (reordering
+/// would be immediately undone by the sort), or when the UI is gone.
+fn can_reorder_in_column(ui_weak: &slint::Weak<MainWindow>, status: TaskStatus) -> bool {
+    let Some(ui) = ui_weak.upgrade() else {
+        return false;
+    };
+    get_sort_config(&ui, status).field == SortField::Manual
+}
+
+/// Build a `Settings` snapshot from the current MainWindow property values.
+fn build_settings(ui: &MainWindow) -> Settings {
+    Settings {
+        theme_mode: ui.get_theme_mode().to_string(),
+        auto_archive_days: ui.get_auto_archive_days() as u32,
+        auto_archive_enabled: ui.get_auto_archive_enabled(),
+        column_sort: ColumnSortSettings {
+            todo: get_sort_config(ui, TaskStatus::Todo),
+            in_progress: get_sort_config(ui, TaskStatus::InProgress),
+            done: get_sort_config(ui, TaskStatus::Done),
+        },
     }
 }
 

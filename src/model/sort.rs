@@ -38,43 +38,26 @@ impl SortField {
     }
 }
 
-/// Sort direction.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SortDirection {
-    #[default]
-    Ascending,
-    Descending,
-}
-
-impl SortDirection {
-    /// Convert from the bool stored in Slint (true = ascending).
-    pub fn from_bool(ascending: bool) -> Self {
-        if ascending {
-            Self::Ascending
-        } else {
-            Self::Descending
-        }
-    }
-
-    /// Convert to bool for the Slint ThemeSettings global (true = ascending).
-    pub fn to_bool(self) -> bool {
-        matches!(self, Self::Ascending)
-    }
-}
-
 /// Sort configuration for one kanban column.
+///
+/// `direction` is `true` for ascending, `false` for descending.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SortConfig {
     pub field: SortField,
-    pub direction: SortDirection,
+    /// `true` = ascending, `false` = descending.
+    #[serde(default = "default_direction")]
+    pub direction: bool,
+}
+
+fn default_direction() -> bool {
+    true
 }
 
 impl Default for SortConfig {
     fn default() -> Self {
         Self {
             field: SortField::Priority,
-            direction: SortDirection::Ascending,
+            direction: true,
         }
     }
 }
@@ -86,19 +69,18 @@ impl Default for SortConfig {
 /// For `Manual` mode, tasks are assumed to already be in DB `sort_key` order
 /// (the DB query appends `ORDER BY sort_key ASC`). Descending simply reverses.
 pub fn sort_tasks(tasks: &mut [Task], config: SortConfig) {
-    let ascending = config.direction == SortDirection::Ascending;
+    // No-op: Manual + Ascending preserves DB sort_key order.
+    if config.field == SortField::Manual && config.direction {
+        return;
+    }
+    let ascending = config.direction;
 
     match config.field {
         SortField::Manual => {
-            if !ascending {
-                tasks.reverse();
-            }
+            tasks.reverse();
         }
         SortField::Priority => {
-            tasks.sort_by(|a, b| {
-                let ord = a.priority.cmp(&b.priority);
-                if ascending { ord } else { ord.reverse() }
-            });
+            tasks.sort_by(|a, b| with_dir(a.priority.cmp(&b.priority), ascending));
         }
         SortField::DueDate => {
             tasks.sort_by(|a, b| {
@@ -107,20 +89,23 @@ pub fn sort_tasks(tasks: &mut [Task], config: SortConfig) {
                     (None, None) => Ordering::Equal,
                     (None, Some(_)) => Ordering::Greater,
                     (Some(_), None) => Ordering::Less,
-                    (Some(da), Some(db)) => {
-                        let ord = da.cmp(&db);
-                        if ascending { ord } else { ord.reverse() }
-                    }
+                    (Some(da), Some(db)) => with_dir(da.cmp(&db), ascending),
                 }
             });
         }
         SortField::Title => {
-            tasks.sort_by(|a, b| {
-                let ord = pinyin_sort_key(&a.title).cmp(&pinyin_sort_key(&b.title));
-                if ascending { ord } else { ord.reverse() }
-            });
+            if ascending {
+                tasks.sort_by_cached_key(|t| pinyin_sort_key(&t.title));
+            } else {
+                tasks.sort_by_cached_key(|t| std::cmp::Reverse(pinyin_sort_key(&t.title)));
+            }
         }
     }
+}
+
+/// Flip comparison result when descending.
+fn with_dir(ord: Ordering, ascending: bool) -> Ordering {
+    if ascending { ord } else { ord.reverse() }
 }
 
 /// Build a case-insensitive, pinyin-aware sort key from a title string.
@@ -129,7 +114,7 @@ pub fn sort_tasks(tasks: &mut [Task], config: SortConfig) {
 /// Non-Chinese characters are lowercased. This produces a flat ASCII key suitable
 /// for `str::cmp`-based sorting.
 fn pinyin_sort_key(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() * 4);
+    let mut result = String::new();
     for (ch, py) in s.chars().zip(s.to_pinyin()) {
         if let Some(py) = py {
             result.push_str(py.plain());
@@ -214,20 +199,6 @@ mod tests {
         }
     }
 
-    // ---- SortDirection ----
-
-    #[test]
-    fn sort_direction_from_bool() {
-        assert_eq!(SortDirection::from_bool(true), SortDirection::Ascending);
-        assert_eq!(SortDirection::from_bool(false), SortDirection::Descending);
-    }
-
-    #[test]
-    fn sort_direction_to_bool_roundtrip() {
-        assert!(SortDirection::Ascending.to_bool());
-        assert!(!SortDirection::Descending.to_bool());
-    }
-
     // ---- sort_tasks: empty / single ----
 
     #[test]
@@ -257,7 +228,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Manual,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         assert_eq!(tasks[0].id, 1);
@@ -276,7 +247,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Manual,
-                direction: SortDirection::Descending,
+                direction: false,
             },
         );
         assert_eq!(tasks[0].id, 3);
@@ -297,7 +268,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Priority,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         // P0 before P1 before P3
@@ -317,7 +288,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Priority,
-                direction: SortDirection::Descending,
+                direction: false,
             },
         );
         assert_eq!(tasks[0].priority, 3);
@@ -338,7 +309,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::DueDate,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         // Sooner (-2 days) first, then later (+5), then no-due (None) last
@@ -358,7 +329,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::DueDate,
-                direction: SortDirection::Descending,
+                direction: false,
             },
         );
         // Latest first: later (+5), then sooner (-2), then no-due (None) last
@@ -374,7 +345,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::DueDate,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         assert_eq!(tasks[0].id, 1);
@@ -394,7 +365,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Title,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         assert_eq!(tasks[0].title, "apple");
@@ -413,7 +384,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Title,
-                direction: SortDirection::Descending,
+                direction: false,
             },
         );
         assert_eq!(tasks[0].title, "Cherry");
@@ -433,7 +404,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Title,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         // li < wang < zhang → 李四 < 王五 < 张三
@@ -453,7 +424,7 @@ mod tests {
             &mut tasks,
             SortConfig {
                 field: SortField::Title,
-                direction: SortDirection::Ascending,
+                direction: true,
             },
         );
         // alice < bob < zhangsan

@@ -5,6 +5,36 @@ import { StyledTextInput } from "../widgets/styled-text-input.slint";
 import { DialogCard, DialogHeader } from "../widgets/dialog-shell.slint";
 import { DialogFooter } from "../widgets/dialog-footer.slint";
 
+component SortColumnRow {
+    in-out property <int> sort-field;
+    in-out property <bool> ascending;
+    in property <string> label;
+
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            min-width: 80px;
+        }
+        ComboBox {
+            model: ["手动", "优先级", "截止日期", "标题"];
+            current-index <=> root.sort-field;
+        }
+        CheckBox {
+            checked <=> root.ascending;
+        }
+        Text {
+            text: "升序";
+            font-size: 13px;
+            vertical-alignment: center;
+            color: Theme.text-secondary;
+        }
+    }
+}
+
 export component SettingsDialog inherits Rectangle {
     callback cancel();
     callback confirm();
@@ -85,80 +115,9 @@ export component SettingsDialog inherits Rectangle {
                     color: Theme.text-primary;
                 }
 
-                // ---- Todo column ----
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: center;
-                    Text {
-                        text: "📋 待办";
-                        color: Theme.text-primary;
-                        vertical-alignment: center;
-                        min-width: 80px;
-                    }
-                    todo-combo := ComboBox {
-                        model: ["手动", "优先级", "截止日期", "标题"];
-                        current-index <=> root.todo-sort-index;
-                    }
-                    todo-asc := CheckBox {
-                        checked <=> root.todo-asc;
-                    }
-                    Text {
-                        text: "升序";
-                        font-size: 13px;
-                        vertical-alignment: center;
-                        color: Theme.text-secondary;
-                    }
-                }
-
-                // ---- Doing column ----
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: center;
-                    Text {
-                        text: "🔄 进行中";
-                        color: Theme.text-primary;
-                        vertical-alignment: center;
-                        min-width: 80px;
-                    }
-                    doing-combo := ComboBox {
-                        model: ["手动", "优先级", "截止日期", "标题"];
-                        current-index <=> root.doing-sort-index;
-                    }
-                    doing-asc := CheckBox {
-                        checked <=> root.doing-asc;
-                    }
-                    Text {
-                        text: "升序";
-                        font-size: 13px;
-                        vertical-alignment: center;
-                        color: Theme.text-secondary;
-                    }
-                }
-
-                // ---- Done column ----
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: center;
-                    Text {
-                        text: "✅ 已完成";
-                        color: Theme.text-primary;
-                        vertical-alignment: center;
-                        min-width: 80px;
-                    }
-                    done-combo := ComboBox {
-                        model: ["手动", "优先级", "截止日期", "标题"];
-                        current-index <=> root.done-sort-index;
-                    }
-                    done-asc := CheckBox {
-                        checked <=> root.done-asc;
-                    }
-                    Text {
-                        text: "升序";
-                        font-size: 13px;
-                        vertical-alignment: center;
-                        color: Theme.text-secondary;
-                    }
-                }
+                SortColumnRow { label: "📋 待办"; sort-field <=> root.todo-sort-index; ascending <=> root.todo-asc; }
+                SortColumnRow { label: "🔄 进行中"; sort-field <=> root.doing-sort-index; ascending <=> root.doing-asc; }
+                SortColumnRow { label: "✅ 已完成"; sort-field <=> root.done-sort-index; ascending <=> root.done-asc; }
             }
 
             DialogFooter {

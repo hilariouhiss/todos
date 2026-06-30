@@ -7,7 +7,7 @@ pub mod task_status;
 
 pub use project::Project;
 pub use settings::{ColumnSortSettings, Settings};
-pub use sort::{SortConfig, SortDirection, SortField};
+pub use sort::{SortConfig, SortField};
 pub use task::Task;
 pub use task_card_data::TaskCardData;
 pub use task_status::TaskStatus;
