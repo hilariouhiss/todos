@@ -32,13 +32,13 @@ This is a **Slint** (slint.dev) GUI application — a declarative, reactive UI t
 
 **SQL files** (`sql/`): `schema.sql` (table definitions), `seed.sql` (sample data), `auto_archive.sql` (triggers for archiving completed tasks).
 
-**Sort ordering:** Tasks use fractional indexing (`sort_order: f64`) with `compute_sort_order` and `renumber_column` for drag-and-drop reordering without updating every row. `sort_neighbors` computes prev/next order values, filtering the source task on same-column moves.
+**Sort ordering:** Tasks use string fractional indexing (Figma's algorithm via the `fractional_index` crate) with `sort_key: TEXT` columns. `new_sort_key_between` generates a key between two neighbors; `sort_neighbors` computes prev/next keys (filtering the source task on same-column moves); `renumber_column` rebalances a column with evenly-spaced keys when keys grow too long (>100 chars).
 
 **Data flow:** UI events → callback → Rust handler updates DB via repos → rebuild column models from DB → Slint reactively re-renders. State is re-derived from the database on every change; there is no in-memory cache beyond what Slint properties hold.
 
 **Platform note:** `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]` suppresses the console window on Windows release builds so only the Slint window appears when launched from the file manager.
 
-**Key dependencies:** `rusqlite` with `bundled` feature (bundles SQLite, no system dep needed). `chrono` for date handling (`NaiveDate`). Rust edition 2024.
+**Key dependencies:** `rusqlite` with `bundled` feature (bundles SQLite, no system dep needed). `chrono` for date handling (`NaiveDate`). `fractional_index` for string fractional indexing (sort keys). Rust edition 2024.
 
 **Testing:** In-memory SQLite databases (`Connection::open_in_memory()`) with `setup_in_memory()` helpers in each `#[cfg(test)]` module. Database tests insert their own rows via helper functions rather than relying on seed data.
 
