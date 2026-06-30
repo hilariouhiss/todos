@@ -47,7 +47,7 @@ impl Task {
     pub fn to_card_data(&self, tags: Vec<String>) -> TaskCardData {
         let due_text = self
             .due_at
-            .map(|d| d.format("%-m/%-d").to_string())
+            .map(|d| d.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         TaskCardData {
             id: self.id.to_string(),
