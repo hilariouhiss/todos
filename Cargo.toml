@@ -9,6 +9,7 @@ edition = "2024"
 slint = "1.17.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 chrono = "0.4"
+fractional_index = { version = "2.0.2", default-features = false }
 
 [build-dependencies]
 slint-build = "1.17.0"
