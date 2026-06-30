@@ -1,5 +1,13 @@
 // Shared data types, globals, and constants used across the app.
 
+// ---- User settings (two-way bound from MainWindow) ----
+
+export global ThemeSettings {
+    in-out property <string> theme-mode: "system";
+    in-out property <int> auto-archive-days: 7;
+    in-out property <bool> auto-archive-enabled: true;
+}
+
 // ---- Card data struct (matches Rust-side TaskCardData) ----
 
 export struct TaskCardUi {

@@ -1,0 +1,67 @@
+import { Theme } from "../theme.slint";
+
+// ---- Sidebar icon button ----
+
+component SidebarButton inherits Rectangle {
+    in property <string> icon;
+    callback clicked();
+
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: transparent;
+    animate background { duration: 120ms; }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.icon;
+        font-size: 18px;
+        color: Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+}
+
+// ---- Narrow left sidebar ----
+
+export component Sidebar inherits Rectangle {
+    callback settings-clicked();
+    callback archive-clicked();
+
+    width: 48px;
+    background: Theme.dark ? #0d1117 : #f0f0f0;
+
+    // Right edge divider
+    divider := Rectangle {
+        x: parent.width - 1px;
+        y: 0;
+        width: 1px;
+        height: 100%;
+        background: Theme.column-border;
+    }
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        alignment: start;
+
+        // Spacer pushes buttons to their natural position
+        // (top area reserved for future use)
+        Rectangle { height: 8px; }
+
+        SidebarButton {
+            icon: "⚙";
+            clicked => { root.settings-clicked(); }
+        }
+
+        SidebarButton {
+            icon: "📦";
+            clicked => { root.archive-clicked(); }
+        }
+    }
+}

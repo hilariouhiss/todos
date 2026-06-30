@@ -6,6 +6,7 @@ import { Theme } from "../theme.slint";
 
 export component StyledTextInput inherits Rectangle {
     in-out property <string> text;
+    in property <bool> enabled: true;
     min-height: 28px;
     background: Theme.input-bg;
     border-width: 1px;
@@ -16,6 +17,7 @@ export component StyledTextInput inherits Rectangle {
         padding-right: 6px;
         TextInput {
             text <=> root.text;
+            enabled: root.enabled;
             color: Theme.text-primary;
             vertical-alignment: center;
             vertical-stretch: 1;
