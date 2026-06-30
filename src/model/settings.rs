@@ -1,10 +1,24 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use super::TaskStatus;
+use super::sort::SortConfig;
+
 const SETTINGS_FILE: &str = "settings.toml";
 
 /// Default auto-archive delay in days (7 days after completion).
 pub const DEFAULT_AUTO_ARCHIVE_DAYS: u32 = 7;
+
+/// Per-column sort configuration stored under `[column_sort]` in settings.toml.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ColumnSortSettings {
+    #[serde(default)]
+    pub todo: SortConfig,
+    #[serde(default)]
+    pub in_progress: SortConfig,
+    #[serde(default)]
+    pub done: SortConfig,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -20,6 +34,10 @@ pub struct Settings {
     /// 0 = archive immediately upon completion (when enabled).
     #[serde(default = "default_auto_archive_days")]
     pub auto_archive_days: u32,
+
+    /// Per-column sort configuration.
+    #[serde(default)]
+    pub column_sort: ColumnSortSettings,
 }
 
 fn default_theme_mode() -> String {
@@ -38,7 +56,30 @@ impl Default for Settings {
             theme_mode: default_theme_mode(),
             auto_archive_enabled: default_auto_archive_enabled(),
             auto_archive_days: default_auto_archive_days(),
+            column_sort: ColumnSortSettings::default(),
         }
+    }
+}
+
+impl Settings {
+    /// Return the `SortConfig` for a given column status.
+    pub fn column_sort_config(&self, status: TaskStatus) -> SortConfig {
+        match status {
+            TaskStatus::Todo => self.column_sort.todo,
+            TaskStatus::InProgress => self.column_sort.in_progress,
+            TaskStatus::Done => self.column_sort.done,
+            TaskStatus::Archived => SortConfig::default(),
+        }
+    }
+
+    /// Build the Slint ThemeSettings field index (0-3) for a column.
+    pub fn sort_field_index(&self, status: TaskStatus) -> i32 {
+        self.column_sort_config(status).field.to_i32()
+    }
+
+    /// Build the Slint ThemeSettings ascending bool for a column.
+    pub fn sort_ascending(&self, status: TaskStatus) -> bool {
+        self.column_sort_config(status).direction.to_bool()
     }
 }
 

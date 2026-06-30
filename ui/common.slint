@@ -6,6 +6,14 @@ export global ThemeSettings {
     in-out property <string> theme-mode: "system";
     in-out property <int> auto-archive-days: 7;
     in-out property <bool> auto-archive-enabled: true;
+
+    // Per-column sort config: field (0=manual, 1=priority, 2=due_date, 3=title)
+    in-out property <int> todo-sort-field: 1;
+    in-out property <bool> todo-sort-ascending: true;
+    in-out property <int> doing-sort-field: 1;
+    in-out property <bool> doing-sort-ascending: true;
+    in-out property <int> done-sort-field: 1;
+    in-out property <bool> done-sort-ascending: true;
 }
 
 // ---- Card data struct (matches Rust-side TaskCardData) ----

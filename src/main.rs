@@ -13,7 +13,10 @@ use slint::{ComponentHandle, DataTransfer, ModelRc, SharedString, VecModel};
 use db::project::ProjectRepository;
 use db::tag::TagRepository;
 use db::task::{self, TaskRepository};
-use model::{Settings, TaskCardData, TaskStatus};
+use model::sort::sort_tasks;
+use model::{
+    ColumnSortSettings, Settings, SortConfig, SortDirection, SortField, TaskCardData, TaskStatus,
+};
 
 slint::include_modules!();
 
@@ -47,6 +50,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     ui.set_theme_mode(settings.theme_mode.clone().into());
     ui.set_auto_archive_days(settings.auto_archive_days as i32);
     ui.set_auto_archive_enabled(settings.auto_archive_enabled);
+
+    // Apply sort settings
+    ui.set_todo_sort_field(settings.sort_field_index(TaskStatus::Todo));
+    ui.set_todo_sort_ascending(settings.sort_ascending(TaskStatus::Todo));
+    ui.set_doing_sort_field(settings.sort_field_index(TaskStatus::InProgress));
+    ui.set_doing_sort_ascending(settings.sort_ascending(TaskStatus::InProgress));
+    ui.set_done_sort_field(settings.sort_field_index(TaskStatus::Done));
+    ui.set_done_sort_ascending(settings.sort_ascending(TaskStatus::Done));
 
     // --- Load initial column data ---
     rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Todo, &ui);
@@ -112,10 +123,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 target_index
             };
 
-            // No-op guard
+            // No-op guard: same-index, or same-column drag in non-manual mode
             let is_same_column = source_column == target_column;
-            if is_same_column && source_index == effective_index {
-                return DragAction::None;
+            if is_same_column {
+                if source_index == effective_index {
+                    return DragAction::None;
+                }
+                // Block same-column reordering when sort is not manual
+                if let Some(ui) = ui_weak.upgrade() {
+                    let config = get_sort_config(&ui, target_status);
+                    if config.field != SortField::Manual {
+                        return DragAction::None;
+                    }
+                }
             }
 
             // Load target column for sort_key computation
@@ -225,19 +245,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    // save-settings: persist settings to settings.toml
+    // save-settings: persist all settings (including sort config) to settings.toml
     {
+        let task_repo = task_repo_rc.clone();
+        let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
-        api.on_save_settings(move |theme_mode, days, enabled| {
+
+        api.on_save_settings(move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
             let s = Settings {
-                theme_mode: theme_mode.to_string(),
-                auto_archive_days: days as u32,
-                auto_archive_enabled: enabled,
+                theme_mode: ui.get_theme_mode().to_string(),
+                auto_archive_days: ui.get_auto_archive_days() as u32,
+                auto_archive_enabled: ui.get_auto_archive_enabled(),
+                column_sort: ColumnSortSettings {
+                    todo: get_sort_config(&ui, TaskStatus::Todo),
+                    in_progress: get_sort_config(&ui, TaskStatus::InProgress),
+                    done: get_sort_config(&ui, TaskStatus::Done),
+                },
             };
             let _ = s.save();
-            if let Some(ui) = ui_weak.upgrade() {
-                ui.set_show_settings_dialog(false);
-            }
+            reload_all_columns(&*task_repo, &*tag_repo, &ui);
+            ui.set_show_settings_dialog(false);
         });
     }
 
@@ -284,6 +312,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 // ---- Helpers ----
 
+/// Read the current sort configuration for a column from the MainWindow properties
+/// (which are `<=>`-bound to `ThemeSettings` globals).
+fn get_sort_config(ui: &MainWindow, status: TaskStatus) -> SortConfig {
+    let (field, ascending) = match status {
+        TaskStatus::Todo => (ui.get_todo_sort_field(), ui.get_todo_sort_ascending()),
+        TaskStatus::InProgress => (ui.get_doing_sort_field(), ui.get_doing_sort_ascending()),
+        TaskStatus::Done => (ui.get_done_sort_field(), ui.get_done_sort_ascending()),
+        _ => return SortConfig::default(),
+    };
+    SortConfig {
+        field: SortField::from_i32(field),
+        direction: SortDirection::from_bool(ascending),
+    }
+}
+
 fn extract_payload(data: Option<Rc<dyn std::any::Any>>) -> Option<DragPayload> {
     data.and_then(|rc| rc.downcast::<DragPayload>().ok())
         .map(|rc| (*rc).clone())
@@ -308,10 +351,14 @@ fn rebuild_and_set_column(
     status: TaskStatus,
     ui: &MainWindow,
 ) {
-    let tasks = match task_repo.load_by_status(status) {
+    let mut tasks = match task_repo.load_by_status(status) {
         Ok(t) => t,
         Err(_) => return,
     };
+    // Apply client-side sort according to the column's sort config
+    let sort_config = get_sort_config(ui, status);
+    sort_tasks(&mut tasks, sort_config);
+
     let ids: Vec<i64> = tasks.iter().map(|t| t.id).collect();
     let tags = tag_repo.load_for_tasks(&ids).unwrap_or_default();
     let model = build_card_model(&tasks, &tags);

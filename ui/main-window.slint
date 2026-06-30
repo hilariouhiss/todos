@@ -22,7 +22,7 @@ export global Api {
     callback add-task(title: string, description: string, due-at: string,
                       priority: int, parent-task-id: string, project-id: string);
     callback open-archived();
-    callback save-settings(string, int, bool);
+    callback save-settings();
 }
 
 // ---- Main window ----
@@ -42,6 +42,14 @@ export component MainWindow inherits Window {
     in-out property <string> theme-mode <=> ThemeSettings.theme-mode;
     in-out property <int> auto-archive-days <=> ThemeSettings.auto-archive-days;
     in-out property <bool> auto-archive-enabled <=> ThemeSettings.auto-archive-enabled;
+
+    // Per-column sort config — two-way bound to ThemeSettings.
+    in-out property <int> todo-sort-field <=> ThemeSettings.todo-sort-field;
+    in-out property <bool> todo-sort-ascending <=> ThemeSettings.todo-sort-ascending;
+    in-out property <int> doing-sort-field <=> ThemeSettings.doing-sort-field;
+    in-out property <bool> doing-sort-ascending <=> ThemeSettings.doing-sort-ascending;
+    in-out property <int> done-sort-field <=> ThemeSettings.done-sort-field;
+    in-out property <bool> done-sort-ascending <=> ThemeSettings.done-sort-ascending;
 
     // Dialog visibility
     in-out property <bool> show-add-tag-dialog: false;
@@ -165,11 +173,7 @@ export component MainWindow inherits Window {
     if root.show-settings-dialog: SettingsDialog {
         cancel => { root.show-settings-dialog = false; }
         confirm => {
-            Api.save-settings(
-                ThemeSettings.theme-mode,
-                ThemeSettings.auto-archive-days,
-                ThemeSettings.auto-archive-enabled
-            );
+            Api.save-settings();
             root.show-settings-dialog = false;
         }
     }

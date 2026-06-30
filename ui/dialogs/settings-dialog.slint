@@ -17,8 +17,18 @@ export component SettingsDialog inherits Rectangle {
         : ThemeSettings.theme-mode == "dark" ? 2 : 0;
     in-out property <string> days-text: ThemeSettings.auto-archive-days;
 
+    // Sort combo indices — initialized from ThemeSettings, written back on confirm.
+    property <int> todo-sort-index: ThemeSettings.todo-sort-field;
+    property <int> doing-sort-index: ThemeSettings.doing-sort-field;
+    property <int> done-sort-index: ThemeSettings.done-sort-field;
+
+    // Ascending toggles — same pattern as combo indices for consistency.
+    property <bool> todo-asc: ThemeSettings.todo-sort-ascending;
+    property <bool> doing-asc: ThemeSettings.doing-sort-ascending;
+    property <bool> done-asc: ThemeSettings.done-sort-ascending;
+
     DialogCard {
-        width: 360px; height: 320px;
+        width: 360px; height: 530px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
 
@@ -65,12 +75,110 @@ export component SettingsDialog inherits Rectangle {
                 }
             }
 
+            // Column sort configuration
+            VerticalLayout {
+                spacing: 8px;
+
+                Text {
+                    text: "列排序";
+                    font-weight: 600;
+                    color: Theme.text-primary;
+                }
+
+                // ---- Todo column ----
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Text {
+                        text: "📋 待办";
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                        min-width: 80px;
+                    }
+                    todo-combo := ComboBox {
+                        model: ["手动", "优先级", "截止日期", "标题"];
+                        current-index <=> root.todo-sort-index;
+                    }
+                    todo-asc := CheckBox {
+                        checked <=> root.todo-asc;
+                    }
+                    Text {
+                        text: "升序";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: Theme.text-secondary;
+                    }
+                }
+
+                // ---- Doing column ----
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Text {
+                        text: "🔄 进行中";
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                        min-width: 80px;
+                    }
+                    doing-combo := ComboBox {
+                        model: ["手动", "优先级", "截止日期", "标题"];
+                        current-index <=> root.doing-sort-index;
+                    }
+                    doing-asc := CheckBox {
+                        checked <=> root.doing-asc;
+                    }
+                    Text {
+                        text: "升序";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: Theme.text-secondary;
+                    }
+                }
+
+                // ---- Done column ----
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: center;
+                    Text {
+                        text: "✅ 已完成";
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                        min-width: 80px;
+                    }
+                    done-combo := ComboBox {
+                        model: ["手动", "优先级", "截止日期", "标题"];
+                        current-index <=> root.done-sort-index;
+                    }
+                    done-asc := CheckBox {
+                        checked <=> root.done-asc;
+                    }
+                    Text {
+                        text: "升序";
+                        font-size: 13px;
+                        vertical-alignment: center;
+                        color: Theme.text-secondary;
+                    }
+                }
+            }
+
             DialogFooter {
                 cancel => { root.cancel(); }
                 confirm => {
+                    // Write theme mode
                     ThemeSettings.theme-mode = root.theme-index == 0 ? "system"
                         : root.theme-index == 1 ? "light" : "dark";
                     ThemeSettings.auto-archive-days = root.days-text.to-float();
+
+                    // Write sort field indices back to ThemeSettings
+                    ThemeSettings.todo-sort-field = root.todo-sort-index;
+                    ThemeSettings.doing-sort-field = root.doing-sort-index;
+                    ThemeSettings.done-sort-field = root.done-sort-index;
+
+                    // Write ascending toggles back to ThemeSettings
+                    ThemeSettings.todo-sort-ascending = root.todo-asc;
+                    ThemeSettings.doing-sort-ascending = root.doing-asc;
+                    ThemeSettings.done-sort-ascending = root.done-asc;
+
                     root.confirm();
                 }
             }
