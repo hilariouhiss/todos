@@ -83,12 +83,12 @@ mod tests {
         // Insert sample tags and task_tags
         conn.execute_batch(
             "INSERT INTO tags (id, name) VALUES (1, 'ui'), (2, 'bug'), (3, 'docs');
-             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
-             VALUES (1, 't1', 0, 1000.0, datetime('now'), datetime('now'));
-             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
-             VALUES (2, 't2', 0, 2000.0, datetime('now'), datetime('now'));
-             INSERT INTO tasks (id, title, status, sort_order, created_at, updated_at)
-             VALUES (3, 't3', 0, 3000.0, datetime('now'), datetime('now'));
+             INSERT INTO tasks (id, title, status, sort_key, created_at, updated_at)
+             VALUES (1, 't1', 0, '80', datetime('now'), datetime('now'));
+             INSERT INTO tasks (id, title, status, sort_key, created_at, updated_at)
+             VALUES (2, 't2', 0, '8180', datetime('now'), datetime('now'));
+             INSERT INTO tasks (id, title, status, sort_key, created_at, updated_at)
+             VALUES (3, 't3', 0, '8280', datetime('now'), datetime('now'));
              INSERT INTO task_tags (tag_id, task_id) VALUES (1, 1), (2, 1), (2, 2);",
         )
         .unwrap();

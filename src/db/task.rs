@@ -1,13 +1,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use fractional_index::FractionalIndex;
 use rusqlite::{Connection, Result, params};
 
 use crate::model::{Task, TaskStatus};
 
 pub trait TaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>>;
-    fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()>;
+    fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_key: &str) -> Result<()>;
     fn renumber_column(&self, status: TaskStatus) -> Result<()>;
     fn insert(
         &self,
@@ -34,14 +35,14 @@ impl TaskRepository for SqliteTaskRepository {
     fn load_by_status(&self, status: TaskStatus) -> Result<Vec<Task>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
-            "SELECT id, title, description, status, priority, sort_order,
+            "SELECT id, title, description, status, priority, sort_key,
                     due_at, reminder_at, parent_task_id, project_id,
                     assignee, completed_at, created_by, created_at,
                     updated_by, updated_at, deleted_by, deleted_at,
                     archived_by, archived_at
              FROM tasks
              WHERE deleted_at IS NULL AND status = ?1
-             ORDER BY sort_order ASC",
+             ORDER BY sort_key ASC",
         )?;
 
         let rows = stmt.query_map(params![status as i32], |row| {
@@ -51,7 +52,7 @@ impl TaskRepository for SqliteTaskRepository {
                 description: row.get(2)?,
                 status: TaskStatus::from_i32(row.get::<_, i32>(3)?).unwrap_or(TaskStatus::Todo),
                 priority: row.get(4)?,
-                sort_order: row.get(5)?,
+                sort_key: row.get(5)?,
                 due_at: row
                     .get::<_, Option<String>>(6)?
                     .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
@@ -74,7 +75,7 @@ impl TaskRepository for SqliteTaskRepository {
         rows.collect()
     }
 
-    fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_order: f64) -> Result<()> {
+    fn move_task(&self, task_id: i64, new_status: TaskStatus, sort_key: &str) -> Result<()> {
         let conn = self.conn.borrow();
 
         let completed_col = match new_status {
@@ -83,10 +84,10 @@ impl TaskRepository for SqliteTaskRepository {
         };
 
         let sql = format!(
-            "UPDATE tasks SET status = ?1, sort_order = ?2, {completed_col} updated_at = datetime('now') WHERE id = ?3"
+            "UPDATE tasks SET status = ?1, sort_key = ?2, {completed_col} updated_at = datetime('now') WHERE id = ?3"
         );
 
-        conn.execute(&sql, params![new_status as i32, sort_order, task_id])?;
+        conn.execute(&sql, params![new_status as i32, sort_key, task_id])?;
         Ok(())
     }
 
@@ -95,23 +96,24 @@ impl TaskRepository for SqliteTaskRepository {
         let mut stmt = conn.prepare(
             "SELECT id FROM tasks
              WHERE deleted_at IS NULL AND status = ?1
-             ORDER BY sort_order ASC",
+             ORDER BY sort_key ASC",
         )?;
 
         let ids: Vec<i64> = stmt
             .query_map(params![status as i32], |row| row.get(0))?
             .collect::<Result<Vec<i64>>>()?;
 
-        // Drop the statement borrow before starting the transaction
         drop(stmt);
 
         conn.execute_batch("BEGIN IMMEDIATE")?;
-        for (i, id) in ids.iter().enumerate() {
-            let new_order = (i as f64 + 1.0) * 1000.0;
+        let mut key = FractionalIndex::default();
+        for id in &ids {
+            let key_str = key.to_string();
             conn.execute(
-                "UPDATE tasks SET sort_order = ?1, updated_at = datetime('now') WHERE id = ?2",
-                params![new_order, id],
+                "UPDATE tasks SET sort_key = ?1, updated_at = datetime('now') WHERE id = ?2",
+                params![key_str, id],
             )?;
+            key = FractionalIndex::new_after(&key);
         }
         conn.execute_batch("COMMIT")?;
         Ok(())
@@ -128,52 +130,53 @@ impl TaskRepository for SqliteTaskRepository {
     ) -> Result<i64> {
         let conn = self.conn.borrow();
 
-        // Compute sort_order = MAX(sort_order) + 1000 for Todo column
-        let max_order: f64 = conn
+        // Get the last sort_key in the Todo column, generate the next key after it
+        let last_key: Option<String> = conn
             .query_row(
-                "SELECT COALESCE(MAX(sort_order), 0.0) FROM tasks WHERE deleted_at IS NULL AND status = 0",
+                "SELECT sort_key FROM tasks
+                 WHERE deleted_at IS NULL AND status = 0
+                 ORDER BY sort_key DESC LIMIT 1",
                 [],
                 |row| row.get(0),
             )
-            .unwrap_or(0.0);
+            .ok();
+
+        let new_key = match last_key {
+            Some(ref k) => {
+                let last =
+                    FractionalIndex::from_string(k).unwrap_or_else(|_| FractionalIndex::default());
+                FractionalIndex::new_after(&last)
+            }
+            None => FractionalIndex::default(),
+        };
 
         conn.execute(
-            "INSERT INTO tasks (title, description, status, priority, sort_order, due_at, parent_task_id, project_id, created_at, updated_at)
+            "INSERT INTO tasks (title, description, status, priority, sort_key, due_at, parent_task_id, project_id, created_at, updated_at)
              VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now'))",
-            params![title, description, priority, max_order + 1000.0, due_at, parent_task_id, project_id],
+            params![
+                title,
+                description,
+                priority,
+                new_key.to_string(),
+                due_at,
+                parent_task_id,
+                project_id,
+            ],
         )?;
         Ok(conn.last_insert_rowid())
     }
 }
 
-/// Compute `sort_order` for a task inserted between `prev` and `next`.
-pub fn compute_sort_order(prev: Option<f64>, next: Option<f64>) -> f64 {
-    match (prev, next) {
-        (None, None) => 1000.0,
-        (None, Some(next)) => next - 1000.0,
-        (Some(prev), None) => prev + 1000.0,
-        (Some(prev), Some(next)) => (prev + next) / 2.0,
-    }
-}
-
-/// True when the gap between adjacent sort_orders is too narrow for safe insertion.
-pub fn sort_order_gap_too_small(prev: Option<f64>, next: Option<f64>) -> bool {
-    match (prev, next) {
-        (Some(p), Some(n)) => (n - p).abs() < 0.000001,
-        _ => false,
-    }
-}
-
-/// Compute prev and next sort_orders for insertion at `effective_index`.
+/// Compute prev and next sort_keys for insertion at `effective_index`.
 /// When `filter_source` is true, the task at `source_index` is excluded so its
-/// own sort_order doesn't contaminate the computation (same-column moves).
+/// own sort_key doesn't contaminate the computation (same-column moves).
 /// Uses direct indexing — no allocation.
 pub fn sort_neighbors(
     tasks: &[Task],
     filter_source: bool,
     source_index: i32,
     effective_index: i32,
-) -> (Option<f64>, Option<f64>) {
+) -> (Option<String>, Option<String>) {
     let index_of = |i: i32| -> usize {
         let raw = i as usize;
         if filter_source && raw >= source_index as usize {
@@ -186,12 +189,36 @@ pub fn sort_neighbors(
     let prev = if effective_index > 0 {
         tasks
             .get(index_of(effective_index - 1))
-            .map(|t| t.sort_order)
+            .map(|t| t.sort_key.clone())
     } else {
         None
     };
-    let next = tasks.get(index_of(effective_index)).map(|t| t.sort_order);
+    let next = tasks
+        .get(index_of(effective_index))
+        .map(|t| t.sort_key.clone());
     (prev, next)
+}
+
+/// Generate a new sort_key between `prev` and `next` using string fractional indexing.
+/// Returns None if the keys cannot be parsed (should not happen with valid DB data).
+pub fn new_sort_key_between(prev: Option<&str>, next: Option<&str>) -> Option<String> {
+    let prev_fi = prev
+        .map(FractionalIndex::from_string)
+        .transpose()
+        .ok()
+        .flatten();
+    let next_fi = next
+        .map(FractionalIndex::from_string)
+        .transpose()
+        .ok()
+        .flatten();
+    Some(FractionalIndex::new(prev_fi.as_ref(), next_fi.as_ref())?.to_string())
+}
+
+/// True when the sort_key has grown unreasonably long and the column should be rebalanced.
+pub fn sort_key_needs_rebalance(prev: Option<&str>, next: Option<&str>) -> bool {
+    let threshold = 100;
+    prev.is_some_and(|k| k.len() >= threshold) || next.is_some_and(|k| k.len() >= threshold)
 }
 
 #[cfg(test)]
@@ -220,12 +247,12 @@ mod tests {
         title: &str,
         status: i32,
         priority: i32,
-        sort_order: f64,
+        sort_key: &str,
     ) {
         conn.execute(
-            "INSERT INTO tasks (id, title, status, priority, sort_order, created_at, updated_at)
+            "INSERT INTO tasks (id, title, status, priority, sort_key, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'), datetime('now'))",
-            rusqlite::params![id, title, status, priority, sort_order],
+            rusqlite::params![id, title, status, priority, sort_key],
         )
         .unwrap();
     }
@@ -235,81 +262,103 @@ mod tests {
         id: i64,
         title: &str,
         status: i32,
-        sort_order: f64,
+        sort_key: &str,
         completed_at: Option<&str>,
     ) {
         conn.execute(
-            "INSERT INTO tasks (id, title, status, sort_order, due_at, completed_at, created_at, updated_at)
+            "INSERT INTO tasks (id, title, status, sort_key, due_at, completed_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now'))",
-            rusqlite::params![id, title, status, sort_order, completed_at.unwrap_or("2026-12-01"), completed_at],
+            rusqlite::params![
+                id,
+                title,
+                status,
+                sort_key,
+                completed_at.unwrap_or("2026-12-01"),
+                completed_at,
+            ],
         )
         .unwrap();
     }
 
-    // ---- compute_sort_order ----
+    // ---- new_sort_key_between ----
 
     #[test]
-    fn compute_sort_order_empty_column() {
-        assert_eq!(compute_sort_order(None, None), 1000.0);
+    fn new_key_empty_column() {
+        let key = new_sort_key_between(None, None).unwrap();
+        assert!(!key.is_empty());
+        // Default key for empty column
+        assert_eq!(key, FractionalIndex::default().to_string());
     }
 
     #[test]
-    fn compute_sort_order_before_first() {
-        assert_eq!(compute_sort_order(None, Some(1000.0)), 0.0);
+    fn new_key_after_last() {
+        let first = FractionalIndex::default().to_string();
+        let key = new_sort_key_between(Some(&first), None).unwrap();
+        let fi = FractionalIndex::from_string(&key).unwrap();
+        let fi_first = FractionalIndex::from_string(&first).unwrap();
+        assert!(fi > fi_first);
     }
 
     #[test]
-    fn compute_sort_order_after_last() {
-        assert_eq!(compute_sort_order(Some(2000.0), None), 3000.0);
+    fn new_key_before_first() {
+        let first = FractionalIndex::default().to_string();
+        let key = new_sort_key_between(None, Some(&first)).unwrap();
+        let fi = FractionalIndex::from_string(&key).unwrap();
+        let fi_first = FractionalIndex::from_string(&first).unwrap();
+        assert!(fi < fi_first);
     }
 
     #[test]
-    fn compute_sort_order_between() {
-        assert_eq!(compute_sort_order(Some(1000.0), Some(2000.0)), 1500.0);
+    fn new_key_between() {
+        let first = FractionalIndex::default(); // "80"
+        let second = FractionalIndex::new_after(&first); // after first
+        let mid =
+            new_sort_key_between(Some(&first.to_string()), Some(&second.to_string())).unwrap();
+        let fi_mid = FractionalIndex::from_string(&mid).unwrap();
+        assert!(fi_mid > first);
+        assert!(fi_mid < second);
+    }
+
+    // ---- sort_key_needs_rebalance ----
+
+    #[test]
+    fn no_rebalance_for_normal_keys() {
+        assert!(!sort_key_needs_rebalance(Some("80"), Some("8180")));
     }
 
     #[test]
-    fn compute_sort_order_between_fractional() {
-        assert_eq!(compute_sort_order(Some(1.0), Some(2.0)), 1.5);
-    }
-
-    // ---- sort_order_gap_too_small ----
-
-    #[test]
-    fn gap_ok_when_wide() {
-        assert!(!sort_order_gap_too_small(Some(1.0), Some(2.0)));
+    fn no_rebalance_when_both_none() {
+        assert!(!sort_key_needs_rebalance(None, None));
     }
 
     #[test]
-    fn gap_too_small_when_tiny() {
-        assert!(sort_order_gap_too_small(Some(1.0), Some(1.0000000001)));
+    fn rebalance_when_prev_too_long() {
+        let long_key = "8".repeat(100);
+        assert!(sort_key_needs_rebalance(Some(&long_key), None));
     }
 
     #[test]
-    fn gap_ok_when_missing_prev() {
-        assert!(!sort_order_gap_too_small(None, Some(1000.0)));
+    fn rebalance_when_next_too_long() {
+        let long_key = "8".repeat(100);
+        assert!(sort_key_needs_rebalance(None, Some(&long_key)));
     }
 
     #[test]
-    fn gap_ok_when_missing_next() {
-        assert!(!sort_order_gap_too_small(Some(1000.0), None));
-    }
-
-    #[test]
-    fn gap_ok_when_both_none() {
-        assert!(!sort_order_gap_too_small(None, None));
+    fn no_rebalance_just_below_threshold() {
+        let key = "8".repeat(99);
+        assert!(!sort_key_needs_rebalance(Some(&key), None));
     }
 
     // ---- sort_neighbors ----
 
-    fn make_task(id: i64, sort_order: f64) -> Task {
+    fn make_task(id: i64, sort_key: String) -> Task {
         Task {
             id,
             title: format!("task-{id}"),
             description: String::new(),
             status: TaskStatus::Todo,
             priority: 0,
-            sort_order,
+            sort_key,
             due_at: None,
             reminder_at: None,
             parent_task_id: None,
@@ -329,116 +378,74 @@ mod tests {
 
     #[test]
     fn sort_neighbors_cross_column_insert_at_start() {
-        // [A:100, B:200, C:300], insert at index 0 → between None and A
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
         let (prev, next) = sort_neighbors(&tasks, false, 0, 0);
         assert_eq!(prev, None);
-        assert_eq!(next, Some(100.0));
+        assert_eq!(next, Some("a".into()));
     }
 
     #[test]
     fn sort_neighbors_cross_column_insert_at_end() {
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
         let (prev, next) = sort_neighbors(&tasks, false, 0, 3);
-        assert_eq!(prev, Some(300.0));
+        assert_eq!(prev, Some("c".into()));
         assert_eq!(next, None);
     }
 
     #[test]
     fn sort_neighbors_cross_column_insert_between() {
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
         let (prev, next) = sort_neighbors(&tasks, false, 0, 1);
-        assert_eq!(prev, Some(100.0));
-        assert_eq!(next, Some(200.0));
+        assert_eq!(prev, Some("a".into()));
+        assert_eq!(next, Some("b".into()));
     }
 
     #[test]
     fn sort_neighbors_same_column_excludes_source() {
-        // [A:100, B:200, C:300], move B (index 1) to index 2
-        // effective_index=2 (corrected from raw 3 where it was dropped)
-        // Neighbors should be C and None (B excluded, D doesn't exist)
-        // Wait: effective_index is the CORRECTED index for 3-element list after removal
-        // source_index=1, raw drop at index 2
-        // effective_index = 2 (same column, source_index=1 < 2, so 2-1=1? No...)
-        // Actually: source_index=1, target_index (raw)=3
-        // effective_index = 3-1 = 2 (since source(1) < target(3))
-        // After removing B: [A:100, C:300]
-        // effective_index=2 means after C (= end)
-        // prev = C(300), next = None
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
         let (prev, next) = sort_neighbors(&tasks, true, 1, 2);
-        assert_eq!(prev, Some(300.0)); // C
+        assert_eq!(prev, Some("c".into())); // C
         assert_eq!(next, None); // end of list
     }
 
     #[test]
     fn sort_neighbors_same_column_excludes_source_insert_between() {
-        // [A:100, B:200, C:300], move C (index 2) to index 0
-        // effective_index=0 (source_index=2, not < target=0, so 0)
-        // After removing C: [A:100, B:200]
-        // effective_index=0 → between None and A
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
         let (prev, next) = sort_neighbors(&tasks, true, 2, 0);
         assert_eq!(prev, None);
-        assert_eq!(next, Some(100.0)); // A (after filtering, index 0 is A)
+        assert_eq!(next, Some("a".into()));
     }
 
     #[test]
     fn sort_neighbors_same_column_move_down_one() {
-        // [A:100, B:200, C:300], swap A and B
-        // source_index=0, target_index=1
-        // effective_index=1 (source=0 < target=1, so 1-1=0? No: target_index=1, not < source=0)
-        // Actually: source_index=0, target_index=1, source<target → effective=1-1=0
-        // Hmm no. source_index=0 < target_index=1 → effective = 1-1 = 0
-        // After removing A: [B:200, C:300], effective_index=0 → between None and B
-        // That's wrong-ish... wait. If you drag A from index 0 to after index 0 (between A and B),
-        // the raw target is 1. After removing A, effective is 0.
-        // But the user wanted to put A after B? No, dropping at "index 1" means after position 1,
-        // which is after the first card (A). After removing A, B is at 0, C at 1.
-        // So target_index=1 means after B, which is index 1 in [B, C].
-        // effective=0? That doesn't match.
-        //
-        // Actually the Slint drop-index formula:
-        // drop-index = clamp(floor((hover-y - card-height/2) / card-stride) + 1, 0, tasks.length)
-        //
-        // Dropping between A and B (hover over that gap): hover-y is roughly card-height
-        // card-stride = card-height + card-spacing
-        // (card-height - card-height/2) / card-stride + 1 = card-height/2 / card-stride + 1 ≈ 0.5 + 1 = 1 (if card-spacing small)
-        // So drop-index=1 means "after card index 0" = between A and B
-        // After effective correction: source=0 < target=1 → effective = 0
-        // After removal: [B:200, C:300], effective=0 → between None and B = BEFORE B
-        // That's correct! Moving A from index 0 to between A and B, A is removed,
-        // so the gap between None and B is the right spot.
-
         let tasks = vec![
-            make_task(1, 100.0),
-            make_task(2, 200.0),
-            make_task(3, 300.0),
+            make_task(1, "a".into()),
+            make_task(2, "b".into()),
+            make_task(3, "c".into()),
         ];
-        // source_index=0, effective=0 (insert at start after removal)
         let (prev, next) = sort_neighbors(&tasks, true, 0, 0);
         assert_eq!(prev, None);
-        assert_eq!(next, Some(200.0)); // B, since A is filtered out
+        assert_eq!(next, Some("b".into()));
     }
 
     // ---- SqliteTaskRepository integration tests ----
@@ -455,9 +462,9 @@ mod tests {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "todo-1", 0, 1, 1000.0);
-            insert_task(&c, 2, "doing-1", 1, 0, 2000.0);
-            insert_task(&c, 3, "todo-2", 0, 2, 3000.0);
+            insert_task(&c, 1, "todo-1", 0, 1, "80");
+            insert_task(&c, 2, "doing-1", 1, 0, "80");
+            insert_task(&c, 3, "todo-2", 0, 2, "8180");
         }
         let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(todos.len(), 2);
@@ -466,13 +473,13 @@ mod tests {
     }
 
     #[test]
-    fn load_by_status_orders_by_sort_order() {
+    fn load_by_status_orders_by_sort_key() {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "second", 0, 0, 5000.0);
-            insert_task(&c, 2, "first", 0, 0, 1000.0);
-            insert_task(&c, 3, "third", 0, 0, 9000.0);
+            insert_task(&c, 1, "second", 0, 0, "8280");
+            insert_task(&c, 2, "first", 0, 0, "80");
+            insert_task(&c, 3, "third", 0, 0, "8380");
         }
         let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(todos[0].title, "first");
@@ -485,10 +492,10 @@ mod tests {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "alive", 0, 0, 1000.0);
+            insert_task(&c, 1, "alive", 0, 0, "80");
             c.execute(
-                "INSERT INTO tasks (id, title, status, sort_order, deleted_at, created_at, updated_at)
-                 VALUES (2, 'dead', 0, 2000.0, datetime('now'), datetime('now'), datetime('now'))",
+                "INSERT INTO tasks (id, title, status, sort_key, deleted_at, created_at, updated_at)
+                 VALUES (2, 'dead', 0, '8180', datetime('now'), datetime('now'), datetime('now'))",
                 [],
             )
             .unwrap();
@@ -503,9 +510,9 @@ mod tests {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "task", 0, 0, 1000.0);
+            insert_task(&c, 1, "task", 0, 0, "80");
         }
-        repo.move_task(1, TaskStatus::Done, 500.0).unwrap();
+        repo.move_task(1, TaskStatus::Done, "8180").unwrap();
         let tasks = repo.load_by_status(TaskStatus::Done).unwrap();
         assert_eq!(tasks.len(), 1);
         assert!(tasks[0].completed_at.is_some());
@@ -516,28 +523,27 @@ mod tests {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task_with_due(&c, 1, "done-task", 2, 1000.0, Some("2026-06-01 10:00:00"));
+            insert_task_with_due(&c, 1, "done-task", 2, "80", Some("2026-06-01 10:00:00"));
         }
-        // Verify completed_at is set
         let tasks = repo.load_by_status(TaskStatus::Done).unwrap();
         assert!(tasks[0].completed_at.is_some());
 
-        repo.move_task(1, TaskStatus::Todo, 500.0).unwrap();
+        repo.move_task(1, TaskStatus::Todo, "80").unwrap();
         let tasks = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(tasks.len(), 1);
         assert!(tasks[0].completed_at.is_none());
     }
 
     #[test]
-    fn move_task_updates_sort_order() {
+    fn move_task_updates_sort_key() {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "task", 0, 0, 1000.0);
+            insert_task(&c, 1, "task", 0, 0, "80");
         }
-        repo.move_task(1, TaskStatus::InProgress, 7777.0).unwrap();
+        repo.move_task(1, TaskStatus::InProgress, "abc123").unwrap();
         let tasks = repo.load_by_status(TaskStatus::InProgress).unwrap();
-        assert_eq!(tasks[0].sort_order, 7777.0);
+        assert_eq!(tasks[0].sort_key, "abc123");
     }
 
     #[test]
@@ -545,23 +551,20 @@ mod tests {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            // Disordered sort_orders
-            insert_task(&c, 1, "a", 0, 0, 42.0);
-            insert_task(&c, 2, "b", 0, 0, 17.0);
-            insert_task(&c, 3, "c", 0, 0, 99.0);
+            insert_task(&c, 1, "a", 0, 0, "99");
+            insert_task(&c, 2, "b", 0, 0, "17");
+            insert_task(&c, 3, "c", 0, 0, "42");
         }
         repo.renumber_column(TaskStatus::Todo).unwrap();
         let tasks = repo.load_by_status(TaskStatus::Todo).unwrap();
-        // After renumber, should be 1000, 2000, 3000 in the original sort_order
-        // But wait — the SELECT in renumber orders by sort_order ASC,
-        // so ids are processed in order: b(17), a(42), c(99)
-        // Result: b=1000.0, a=2000.0, c=3000.0
-        assert_eq!(tasks[0].sort_order, 1000.0);
-        assert_eq!(tasks[1].sort_order, 2000.0);
-        assert_eq!(tasks[2].sort_order, 3000.0);
+        // After renumber, sorted by old sort_key order: b(17), c(42), a(99)
+        // New keys: default="80", new_after="8180", new_after="8280"
         assert_eq!(tasks[0].title, "b");
-        assert_eq!(tasks[1].title, "a");
-        assert_eq!(tasks[2].title, "c");
+        assert_eq!(tasks[1].title, "c");
+        assert_eq!(tasks[2].title, "a");
+        // Verify keys are lexicographically ordered
+        assert!(tasks[0].sort_key < tasks[1].sort_key);
+        assert!(tasks[1].sort_key < tasks[2].sort_key);
     }
 
     #[test]
@@ -584,16 +587,17 @@ mod tests {
     }
 
     #[test]
-    fn insert_sets_sort_order_after_last() {
+    fn insert_sets_sort_key_after_last() {
         let (repo, conn) = setup_in_memory();
         {
             let c = conn.borrow();
-            insert_task(&c, 1, "existing", 0, 0, 500.0);
+            insert_task(&c, 1, "existing", 0, 0, "80");
         }
         repo.insert("new", "", None, 0, None, None).unwrap();
         let todos = repo.load_by_status(TaskStatus::Todo).unwrap();
         assert_eq!(todos.len(), 2);
-        assert_eq!(todos[0].sort_order, 500.0); // existing
-        assert_eq!(todos[1].sort_order, 1500.0); // new = 500 + 1000
+        assert_eq!(todos[0].sort_key, "80"); // existing
+        // New key should be lexicographically after the old one
+        assert!(todos[0].sort_key < todos[1].sort_key);
     }
 }

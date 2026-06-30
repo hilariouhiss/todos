@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     description     TEXT NOT NULL DEFAULT '',
     status          INTEGER NOT NULL DEFAULT 0 CHECK (status IN (0, 1, 2, 3)),
     priority        INTEGER NOT NULL DEFAULT 0 CHECK (priority >= 0),
-    sort_order      REAL NOT NULL DEFAULT 0,
+    sort_key        TEXT NOT NULL DEFAULT '80',
     due_at          TEXT,
     reminder_at     TEXT,
     parent_task_id  INTEGER REFERENCES tasks(id),
@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS task_tags (
     PRIMARY KEY (tag_id, task_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status_sort
-    ON tasks(status, sort_order)
+CREATE INDEX IF NOT EXISTS idx_tasks_status_sort_key
+    ON tasks(status, sort_key)
     WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id);

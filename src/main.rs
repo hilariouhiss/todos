@@ -106,30 +106,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return DragAction::None;
             }
 
-            // Load target column for sort_order computation
+            // Load target column for sort_key computation
             let target_tasks = match task_repo.load_by_status(target_status) {
                 Ok(t) => t,
                 Err(_) => return DragAction::None,
             };
 
-            // Compute prev/next from the neighbor list (source-filtered if same column)
-            let (prev_order, next_order) =
+            // Compute prev/next sort_keys from neighbors (source-filtered if same column)
+            let (prev_key, next_key) =
                 task::sort_neighbors(&target_tasks, is_same_column, source_index, effective_index);
 
-            if task::sort_order_gap_too_small(prev_order, next_order) {
+            if task::sort_key_needs_rebalance(prev_key.as_deref(), next_key.as_deref()) {
                 let _ = task_repo.renumber_column(target_status);
             }
 
-            // Reload (may have changed from renumber), re-filter, compute final sort_order
+            // Reload (may have changed from renumber), re-filter, compute final sort_key
             let reloaded = task_repo
                 .load_by_status(target_status)
                 .unwrap_or(target_tasks);
-            let (prev_order, next_order) =
+            let (prev_key, next_key) =
                 task::sort_neighbors(&reloaded, is_same_column, source_index, effective_index);
-            let new_order = task::compute_sort_order(prev_order, next_order);
+            let Some(new_key) =
+                task::new_sort_key_between(prev_key.as_deref(), next_key.as_deref())
+            else {
+                return DragAction::None;
+            };
 
             if task_repo
-                .move_task(task_id, target_status, new_order)
+                .move_task(task_id, target_status, &new_key)
                 .is_err()
             {
                 return DragAction::None;
