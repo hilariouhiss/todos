@@ -1,0 +1,44 @@
+import { Theme } from "../theme.slint";
+import { StyledTextInput } from "../widgets/styled-text-input.slint";
+import { ColorPresetsBar } from "../widgets/color-presets-bar.slint";
+import { DialogCard, DialogHeader } from "../widgets/dialog-shell.slint";
+import { DialogFooter } from "../widgets/dialog-footer.slint";
+
+export component AddProjectDialog inherits Rectangle {
+    callback cancel();
+    callback confirm(string, string, string, string);
+
+    x: 0; y: 0; width: 100%; height: 100%;
+    background: #00000044;
+    TouchArea { }
+
+    DialogCard {
+        width: 360px; height: 380px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        body := VerticalLayout {
+            x: 0; y: 0; width: 100%; height: 100%;
+            padding: 20px; spacing: 12px;
+
+            DialogHeader { title: "添加项目"; close => { root.cancel(); } }
+
+            Text { text: "名称"; color: Theme.text-secondary; }
+            proj-name := StyledTextInput { }
+
+            Text { text: "描述"; color: Theme.text-secondary; }
+            proj-desc := StyledTextInput { }
+
+            Text { text: "负责人"; color: Theme.text-secondary; }
+            proj-mgr := StyledTextInput { }
+
+            Text { text: "颜色"; color: Theme.text-secondary; }
+            ColorPresetsBar { }
+
+            DialogFooter {
+                cancel => { root.cancel(); }
+                confirm => { root.confirm(proj-name.text, proj-desc.text, proj-mgr.text, "#3fb950"); }
+            }
+        }
+    }
+}

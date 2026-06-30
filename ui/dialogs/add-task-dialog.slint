@@ -1,0 +1,54 @@
+import { ComboBox } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { StyledTextInput } from "../widgets/styled-text-input.slint";
+import { DialogCard, DialogHeader } from "../widgets/dialog-shell.slint";
+import { DialogFooter } from "../widgets/dialog-footer.slint";
+
+export component AddTaskDialog inherits Rectangle {
+    callback cancel();
+    callback confirm(string, string, string, int, string, string);
+
+    x: 0; y: 0; width: 100%; height: 100%;
+    background: #00000044;
+    TouchArea { }
+
+    DialogCard {
+        width: 400px; height: 480px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+
+        body := VerticalLayout {
+            x: 0; y: 0; width: 100%; height: 100%;
+            padding: 20px; spacing: 10px;
+
+            DialogHeader { title: "添加任务"; close => { root.cancel(); } }
+
+            Text { text: "标题"; color: Theme.text-secondary; }
+            task-title := StyledTextInput { }
+
+            Text { text: "描述"; color: Theme.text-secondary; }
+            task-desc := StyledTextInput { }
+
+            Text { text: "截止日期 (YYYY-MM-DD)"; color: Theme.text-secondary; }
+            task-due := StyledTextInput { }
+
+            Text { text: "优先级"; color: Theme.text-secondary; }
+            task-prio := ComboBox {
+                model: ["P0 - 紧急", "P1 - 高", "P2 - 中", "P3 - 低"];
+                current-index: 2;
+            }
+
+            Text { text: "父任务 ID"; color: Theme.text-secondary; }
+            task-parent := StyledTextInput { }
+
+            Text { text: "项目 ID"; color: Theme.text-secondary; }
+            task-proj := StyledTextInput { }
+
+            DialogFooter {
+                cancel => { root.cancel(); }
+                confirm => { root.confirm(task-title.text, task-desc.text, task-due.text,
+                    task-prio.current-index, "0", "0"); }
+            }
+        }
+    }
+}
