@@ -22,3 +22,7 @@ docs/superpowers/
 
 # SQLite database
 todos.db
+
+# Runtime files
+*.log
+settings.toml
