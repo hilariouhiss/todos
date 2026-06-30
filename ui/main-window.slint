@@ -108,6 +108,7 @@ export component MainWindow inherits Window {
                 alignment: stretch;
 
                 KanbanColumn {
+                    horizontal-stretch: 1;
                     title: "📋 待办";
                     column-id: 0;
                     tasks: root.todo;
@@ -118,6 +119,7 @@ export component MainWindow inherits Window {
                 }
 
                 KanbanColumn {
+                    horizontal-stretch: 1;
                     title: "🔄 进行中";
                     column-id: 1;
                     tasks: root.doing;
@@ -128,6 +130,7 @@ export component MainWindow inherits Window {
                 }
 
                 KanbanColumn {
+                    horizontal-stretch: 1;
                     title: "✅ 已完成";
                     column-id: 2;
                     tasks: root.done;
