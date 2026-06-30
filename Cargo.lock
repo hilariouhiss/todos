@@ -4847,8 +4847,10 @@ dependencies = [
  "chrono",
  "fractional_index",
  "rusqlite",
+ "serde",
  "slint",
  "slint-build",
+ "toml",
 ]
 
 [[package]]
