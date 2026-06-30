@@ -1,0 +1,41 @@
+import { Theme } from "../theme.slint";
+import { CloseButton } from "close-button.slint";
+
+// ---- Dialog building blocks ----
+//
+// Compose inside each dialog:
+//   DialogCard {
+//       body := VerticalLayout {  // fills the card, pads 20px, spacing 12px
+//           DialogHeader { title: "..."; close => { … } }
+//           // … form fields …
+//           DialogFooter { cancel => { … }; confirm => { … } }
+//       }
+//   }
+
+// ---- Card frame with theme styling ----
+
+export component DialogCard inherits Rectangle {
+    background: Theme.card-bg;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.card-border;
+}
+
+// ---- Title bar with close button ----
+
+export component DialogHeader inherits HorizontalLayout {
+    in property <string> title;
+    callback close();
+
+    Text {
+        text: root.title;
+        font-size: 18px;
+        font-weight: 700;
+        color: Theme.text-primary;
+        vertical-alignment: center;
+    }
+    Rectangle { horizontal-stretch: 1; }  // push × to the right
+    CloseButton {
+        clicked => { root.close(); }
+    }
+}

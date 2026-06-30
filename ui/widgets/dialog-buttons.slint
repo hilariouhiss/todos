@@ -1,0 +1,20 @@
+import { Button } from "std-widgets.slint";
+
+// ---- Cancel + Confirm button row (right-aligned) ----
+
+export component DialogButtons inherits HorizontalLayout {
+    callback cancel();
+    callback confirm();
+
+    spacing: 8px;
+    alignment: end;
+
+    Button {
+        text: "取消";
+        clicked => { root.cancel(); }
+    }
+    Button {
+        text: "确认";
+        clicked => { root.confirm(); }
+    }
+}

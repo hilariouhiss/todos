@@ -1,0 +1,15 @@
+import { ColorPresets } from "../common.slint";
+import { Theme } from "../theme.slint";
+
+// ---- Reusable color preset picker bar ----
+
+export component ColorPresetsBar inherits HorizontalLayout {
+    spacing: 6px;
+    for preset in ColorPresets.all: Rectangle {
+        width: 28px; height: 28px;
+        border-radius: 4px;
+        background: preset.color;
+        border-width: 1px;
+        border-color: Theme.card-border;
+    }
+}

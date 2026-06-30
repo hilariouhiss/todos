@@ -1,0 +1,27 @@
+import { Theme } from "../theme.slint";
+
+// ---- Top-right close (×) button ----
+
+export component CloseButton inherits Rectangle {
+    callback clicked();
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: transparent;
+    animate background { duration: 100ms; }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: "×";
+        font-size: 18px;
+        font-weight: 700;
+        color: Theme.text-secondary;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+}

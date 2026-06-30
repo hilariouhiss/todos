@@ -1,0 +1,17 @@
+import { DialogButtons } from "dialog-buttons.slint";
+
+// ---- Dialog footer: spacer + cancel/confirm buttons ----
+// Place at the end of a dialog's content to push buttons to the bottom.
+
+export component DialogFooter inherits VerticalLayout {
+    callback cancel();
+    callback confirm();
+
+    spacing: 12px;
+
+    Rectangle { vertical-stretch: 1; }  // pushes buttons to bottom
+    DialogButtons {
+        cancel => { root.cancel(); }
+        confirm => { root.confirm(); }
+    }
+}

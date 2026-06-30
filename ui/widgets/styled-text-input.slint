@@ -1,0 +1,25 @@
+import { Theme } from "../theme.slint";
+
+// ---- Styled Text Input ----
+// A TextInput wrapped in a styled Rectangle with border, lighter background,
+// horizontal padding, and vertically centered text/cursor.
+
+export component StyledTextInput inherits Rectangle {
+    in-out property <string> text;
+    min-height: 28px;
+    background: Theme.input-bg;
+    border-width: 1px;
+    border-color: Theme.input-border;
+    border-radius: 4px;
+    VerticalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        TextInput {
+            text <=> root.text;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+        }
+    }
+}

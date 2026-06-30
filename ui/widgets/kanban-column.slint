@@ -1,0 +1,100 @@
+import { TaskCardUi, Layout } from "../common.slint";
+import { Theme } from "../theme.slint";
+import { Card } from "card.slint";
+
+// ---- Kanban column with drop zone ----
+
+export component KanbanColumn inherits Rectangle {
+    in property <string> title;
+    in property <int> column-id;
+    in property <[TaskCardUi]> tasks;
+    in property <color> accent;
+
+    pure callback can-drop-event(DropEvent, int, int) -> DragAction;
+    callback dropped-event(DropEvent, int, int) -> DragAction;
+    pure callback make-data(string, int, int) -> data-transfer;
+
+    property <length> hover-y;
+
+    property <int> drop-index: clamp(
+        floor((hover-y - Layout.card-height / 2) / Layout.card-stride) + 1,
+        0, root.tasks.length
+    );
+
+    min-width: 200px;
+    background: drop-area.has-drag ? Theme.column-drop-bg : Theme.column-bg;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: drop-area.has-drag ? root.accent : Theme.column-border;
+    animate background, border-color { duration: 120ms; }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        // Column header
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background: root.accent;
+            }
+
+            Text {
+                text: root.title;
+                font-size: 15px;
+                font-weight: 700;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: root.tasks.length;
+                color: Theme.text-secondary;
+                font-size: 13px;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                horizontal-stretch: 1;
+            }
+        }
+
+        // Drop zone
+        drop-area := DropArea {
+            vertical-stretch: 1;
+            can-drop(event) => {
+                root.hover-y = event.position.y;
+                return root.can-drop-event(event, root.column-id, root.drop-index);
+            }
+            dropped(event) => {
+                return root.dropped-event(event, root.column-id, root.drop-index);
+            }
+
+            VerticalLayout {
+                spacing: Layout.card-spacing;
+                alignment: start;
+
+                for task[i] in root.tasks: Card {
+                    task: task;
+                    source-column: root.column-id;
+                    source-index: i;
+                    make-data(task-id, col, idx) => root.make-data(task-id, col, idx);
+                }
+            }
+
+            // Insertion indicator
+            if drop-area.has-drag: Rectangle {
+                x: 0;
+                width: parent.width;
+                y: max(0px, root.drop-index * Layout.card-stride
+                            - Layout.card-spacing / 2 - 1.5px);
+                height: 3px;
+                background: root.accent;
+                border-radius: 1.5px;
+            }
+        }
+    }
+}
