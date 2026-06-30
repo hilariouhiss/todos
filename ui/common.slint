@@ -1,0 +1,49 @@
+// Shared data types, globals, and constants used across the app.
+
+// ---- Card data struct (matches Rust-side TaskCardData) ----
+
+export struct TaskCardUi {
+    id: string,
+    title: string,
+    priority: int,
+    due-text: string,
+    is-overdue: bool,
+    tags: [string],
+}
+
+// ---- Layout constants ----
+
+export global Layout {
+    out property <length> card-height: 76px;
+    out property <length> card-spacing: 6px;
+    out property <length> card-stride: card-height + card-spacing;
+}
+
+// ---- Priority dot colors ----
+
+export global PriorityColors {
+    out property <color> p0: #f85149;
+    out property <color> p1: #d29922;
+    out property <color> p2: #58a6ff;
+    out property <color> p3: #8b949e;
+}
+
+// ---- Color presets for tag/project dialogs ----
+
+export struct ColorPreset {
+    color: color,
+    label: string,
+}
+
+export global ColorPresets {
+    out property <[ColorPreset]> all: [
+        { color: #58a6ff, label: "蓝" },
+        { color: #3fb950, label: "绿" },
+        { color: #d29922, label: "黄" },
+        { color: #f85149, label: "红" },
+        { color: #bc8cff, label: "紫" },
+        { color: #ff7b72, label: "橙" },
+        { color: #8b949e, label: "灰" },
+        { color: #ffffff, label: "白" },
+    ];
+}

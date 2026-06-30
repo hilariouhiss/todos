@@ -1,0 +1,19 @@
+import { Palette } from "std-widgets.slint";
+
+// ---- Theme (follows system dark/light via Palette) ----
+
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> window-bg:       dark ? #0d1117 : #ffffff;
+    out property <color> column-bg:       dark ? #161b22 : #f6f8fa;
+    out property <color> column-drop-bg:  dark ? #1d2733 : #eaf5ff;
+    out property <color> column-border:   dark ? #30363d : #d0d7de;
+    out property <color> card-bg:         dark ? #21262d : #ffffff;
+    out property <color> card-border:     dark ? #30363d : #d0d7de;
+    out property <color> shadow:          dark ? #00000066 : #00000018;
+    out property <color> text-primary:    dark ? #e6edf3 : #1f2328;
+    out property <color> text-secondary:  dark ? #768390 : #57606a;
+    out property <color> overdue:         dark ? #ff7b72 : #cf222e;
+    out property <color> input-bg:        dark ? #2d333b : #f6f8fa;
+    out property <color> input-border:    dark ? #484f58 : #afb8c1;
+}
