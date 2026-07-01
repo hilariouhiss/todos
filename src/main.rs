@@ -3,7 +3,6 @@
 mod db;
 mod model;
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
 

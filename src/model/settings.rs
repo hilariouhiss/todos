@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::TaskStatus;
 use super::sort::SortConfig;
 
 const SETTINGS_FILE: &str = "settings.toml";
@@ -67,28 +66,6 @@ impl Default for Settings {
             close_behavior: default_close_behavior(),
             column_sort: ColumnSortSettings::default(),
         }
-    }
-}
-
-impl Settings {
-    /// Return the `SortConfig` for a given column status.
-    pub fn column_sort_config(&self, status: TaskStatus) -> SortConfig {
-        match status {
-            TaskStatus::Todo => self.column_sort.todo,
-            TaskStatus::InProgress => self.column_sort.in_progress,
-            TaskStatus::Done => self.column_sort.done,
-            TaskStatus::Archived => SortConfig::default(),
-        }
-    }
-
-    /// Build the Slint ThemeSettings field index (0-3) for a column.
-    pub fn sort_field_index(&self, status: TaskStatus) -> i32 {
-        self.column_sort_config(status).field.to_i32()
-    }
-
-    /// Build the Slint ThemeSettings ascending bool for a column.
-    pub fn sort_ascending(&self, status: TaskStatus) -> bool {
-        self.column_sort_config(status).direction
     }
 }
 
