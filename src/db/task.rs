@@ -19,6 +19,9 @@ pub trait TaskRepository {
         parent_task_id: Option<i64>,
         project_id: Option<i64>,
     ) -> Result<i64>;
+    /// Run auto-archive: move eligible Done tasks to Archived.
+    /// No-op when `enabled` is false.
+    fn run_auto_archive(&self, enabled: bool, days: u32) -> Result<()>;
 }
 
 pub struct SqliteTaskRepository {
@@ -117,6 +120,11 @@ impl TaskRepository for SqliteTaskRepository {
         }
         conn.execute_batch("COMMIT")?;
         Ok(())
+    }
+
+    fn run_auto_archive(&self, enabled: bool, days: u32) -> Result<()> {
+        let conn = self.conn.borrow();
+        crate::db::run_auto_archive(&conn, enabled, days)
     }
 
     fn insert(

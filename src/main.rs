@@ -204,6 +204,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // Rebuild and update UI models
             if let Some(ui) = ui_weak.upgrade() {
+                // When a task is completed (moved to Done), immediately run
+                // auto-archive so that already-eligible Done tasks are swept up.
+                if target_status == TaskStatus::Done {
+                    let enabled = ui.get_auto_archive_enabled();
+                    let days = ui.get_auto_archive_days() as u32;
+                    let _ = task_repo.run_auto_archive(enabled, days);
+                }
+
                 rebuild_and_set_column(&*task_repo, &*tag_repo, target_status, &ui, &models);
 
                 if !is_same_column {
@@ -288,7 +296,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         api.on_save_settings(move || {
             let Some(ui) = ui_weak.upgrade() else { return };
-            let _ = pull_settings_from_ui(&ui).save();
+            let settings = pull_settings_from_ui(&ui);
+            let _ = settings.save();
+            // Run auto-archive immediately with the new settings so that
+            // changing the auto-archive days takes effect right away.
+            let _ = task_repo.run_auto_archive(
+                settings.auto_archive_enabled,
+                settings.auto_archive_days,
+            );
             reload_all_columns(&*task_repo, &*tag_repo, &ui, &models);
             ui.set_show_settings_dialog(false);
         });

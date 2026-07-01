@@ -11,6 +11,41 @@ use self::project::SqliteProjectRepository;
 use self::tag::SqliteTagRepository;
 use self::task::SqliteTaskRepository;
 
+/// Run auto-archive: move eligible Done tasks (status=2) to Archived (status=3).
+///
+/// When `enabled` is false this is a no-op. When `days` is 0 all Done tasks are
+/// archived immediately; otherwise only tasks whose `completed_at` is at least
+/// `days` in the past are archived.
+pub fn run_auto_archive(conn: &Connection, enabled: bool, days: u32) -> Result<()> {
+    if !enabled {
+        return Ok(());
+    }
+    if days == 0 {
+        conn.execute(
+            "UPDATE tasks
+             SET status = 3,
+                 archived_at = COALESCE(archived_at, datetime('now')),
+                 updated_at = datetime('now')
+             WHERE status = 2
+               AND deleted_at IS NULL",
+            [],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE tasks
+             SET status = 3,
+                 archived_at = COALESCE(archived_at, datetime('now')),
+                 updated_at = datetime('now')
+             WHERE status = 2
+               AND deleted_at IS NULL
+               AND completed_at IS NOT NULL
+               AND completed_at <= datetime('now', ?1)",
+            rusqlite::params![format!("-{} days", days)],
+        )?;
+    }
+    Ok(())
+}
+
 /// Initialise the database: enable foreign keys, apply schema, run auto-archive
 /// (if configured), and seed sample data if the task table is empty.
 /// Returns repository handles that share a single `Rc<RefCell<Connection>>`.
@@ -28,34 +63,7 @@ pub fn init(
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
     conn.execute_batch(include_str!("../sql/schema.sql"))?;
 
-    // Auto-archive: move Done tasks to Archived.
-    // Days = 0: archive immediately.  Disabled: skip entirely.
-    if auto_archive_enabled {
-        if auto_archive_days == 0 {
-            // Archive all Done tasks immediately (regardless of completion date)
-            conn.execute(
-                "UPDATE tasks
-                 SET status = 3,
-                     archived_at = COALESCE(archived_at, datetime('now')),
-                     updated_at = datetime('now')
-                 WHERE status = 2
-                   AND deleted_at IS NULL",
-                [],
-            )?;
-        } else {
-            conn.execute(
-                "UPDATE tasks
-                 SET status = 3,
-                     archived_at = COALESCE(archived_at, datetime('now')),
-                     updated_at = datetime('now')
-                 WHERE status = 2
-                   AND deleted_at IS NULL
-                   AND completed_at IS NOT NULL
-                   AND completed_at <= datetime('now', ?1)",
-                rusqlite::params![format!("-{} days", auto_archive_days)],
-            )?;
-        }
-    }
+    run_auto_archive(&conn, auto_archive_enabled, auto_archive_days)?;
 
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM tasks WHERE deleted_at IS NULL",
