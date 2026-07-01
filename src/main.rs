@@ -30,6 +30,28 @@ struct DragPayload {
     source_index: i32,
 }
 
+// ---- Column model handles ----
+
+/// Persistent `VecModel` handles for the three kanban columns.
+/// Updating these in-place via `set_vec()` avoids creating new `ModelRc`
+/// allocations on every change.
+struct ColumnModels {
+    todo: Rc<VecModel<TaskCardUi>>,
+    doing: Rc<VecModel<TaskCardUi>>,
+    done: Rc<VecModel<TaskCardUi>>,
+}
+
+impl ColumnModels {
+    fn update(&self, status: TaskStatus, cards: Vec<TaskCardUi>) {
+        match status {
+            TaskStatus::Todo => self.todo.set_vec(cards),
+            TaskStatus::InProgress => self.doing.set_vec(cards),
+            TaskStatus::Done => self.done.set_vec(cards),
+            TaskStatus::Archived => {}
+        }
+    }
+}
+
 // ---- Entry point ----
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -46,24 +68,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     // --- Create UI ---
     let ui = MainWindow::new()?;
 
-    // Apply persisted settings to MainWindow properties
-    ui.set_theme_mode(settings.theme_mode.clone().into());
-    ui.set_auto_archive_days(settings.auto_archive_days as i32);
-    ui.set_auto_archive_enabled(settings.auto_archive_enabled);
-
-    // Apply sort settings
-    ui.set_todo_sort_field(settings.sort_field_index(TaskStatus::Todo));
-    ui.set_todo_sort_ascending(settings.sort_ascending(TaskStatus::Todo));
-    ui.set_doing_sort_field(settings.sort_field_index(TaskStatus::InProgress));
-    ui.set_doing_sort_ascending(settings.sort_ascending(TaskStatus::InProgress));
-    ui.set_done_sort_field(settings.sort_field_index(TaskStatus::Done));
-    ui.set_done_sort_ascending(settings.sort_ascending(TaskStatus::Done));
-    ui.set_close_behavior(settings.close_behavior.clone().into());
+    // Apply persisted settings to ThemeSettings globals (<=>-bound to MainWindow).
+    push_settings_to_ui(&ui, &settings);
 
     // --- Load initial column data ---
-    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Todo, &ui);
-    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::InProgress, &ui);
-    rebuild_and_set_column(&task_repo, &tag_repo, TaskStatus::Done, &ui);
+    let models = Rc::new(ColumnModels {
+        todo: Rc::new(VecModel::from(load_and_build_cards(
+            &task_repo,
+            &tag_repo,
+            TaskStatus::Todo,
+            get_sort_config(&ui, TaskStatus::Todo),
+        ))),
+        doing: Rc::new(VecModel::from(load_and_build_cards(
+            &task_repo,
+            &tag_repo,
+            TaskStatus::InProgress,
+            get_sort_config(&ui, TaskStatus::InProgress),
+        ))),
+        done: Rc::new(VecModel::from(load_and_build_cards(
+            &task_repo,
+            &tag_repo,
+            TaskStatus::Done,
+            get_sort_config(&ui, TaskStatus::Done),
+        ))),
+    });
+
+    ui.set_todo(ModelRc::from(models.todo.clone()));
+    ui.set_doing(ModelRc::from(models.doing.clone()));
+    ui.set_done(ModelRc::from(models.done.clone()));
 
     // --- Wire Api callbacks ---
     let task_repo_rc = Rc::new(task_repo);
@@ -99,6 +131,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let task_repo = task_repo_rc.clone();
         let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
+        let models = models.clone();
 
         api.on_dropped(move |event, target_column, target_index| {
             let payload = match extract_payload(event.data.user_data()) {
@@ -171,10 +204,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             // Rebuild and update UI models
             if let Some(ui) = ui_weak.upgrade() {
-                rebuild_and_set_column(&*task_repo, &*tag_repo, target_status, &ui);
+                rebuild_and_set_column(&*task_repo, &*tag_repo, target_status, &ui, &models);
 
                 if !is_same_column {
-                    rebuild_and_set_column(&*task_repo, &*tag_repo, source_status, &ui);
+                    rebuild_and_set_column(&*task_repo, &*tag_repo, source_status, &ui, &models);
                 }
             }
 
@@ -188,11 +221,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let task_repo = task_repo_rc.clone();
         let tag_repo_2 = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
+        let models = models.clone();
 
         api.on_add_tag(move |name, color| {
             let _ = tag_repo.insert(&name, if color.is_empty() { None } else { Some(&color) });
             if let Some(ui) = ui_weak.upgrade() {
-                reload_all_columns(&*task_repo, &*tag_repo_2, &ui);
+                reload_all_columns(&*task_repo, &*tag_repo_2, &ui, &models);
                 ui.set_show_add_tag_dialog(false);
             }
         });
@@ -204,6 +238,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let task_repo = task_repo_rc.clone();
         let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
+        let models = models.clone();
 
         api.on_add_project(move |name, description, manager, color| {
             let _ = project_repo.insert(
@@ -213,7 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if color.is_empty() { None } else { Some(&color) },
             );
             if let Some(ui) = ui_weak.upgrade() {
-                reload_all_columns(&*task_repo, &*tag_repo, &ui);
+                reload_all_columns(&*task_repo, &*tag_repo, &ui, &models);
                 ui.set_show_add_project_dialog(false);
             }
         });
@@ -224,6 +259,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let task_repo = task_repo_rc.clone();
         let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
+        let models = models.clone();
 
         api.on_add_task(
             move |title, description, due_at, priority, parent_task_id_str, project_id_str| {
@@ -236,7 +272,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let project: Option<i64> = project_id_str.parse().ok();
                 let _ = task_repo.insert(&title, &description, due, priority, parent, project);
                 if let Some(ui) = ui_weak.upgrade() {
-                    rebuild_and_set_column(&*task_repo, &*tag_repo, TaskStatus::Todo, &ui);
+                    rebuild_and_set_column(&*task_repo, &*tag_repo, TaskStatus::Todo, &ui, &models);
                     ui.set_show_add_task_dialog(false);
                 }
             },
@@ -248,11 +284,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let task_repo = task_repo_rc.clone();
         let tag_repo = tag_repo_rc.clone();
         let ui_weak = ui_weak.clone();
+        let models = models.clone();
 
         api.on_save_settings(move || {
             let Some(ui) = ui_weak.upgrade() else { return };
-            let _ = build_settings(&ui).save();
-            reload_all_columns(&*task_repo, &*tag_repo, &ui);
+            let _ = pull_settings_from_ui(&ui).save();
+            reload_all_columns(&*task_repo, &*tag_repo, &ui, &models);
             ui.set_show_settings_dialog(false);
         });
     }
@@ -272,7 +309,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             if !behavior.is_empty() {
                 ui.set_close_behavior(behavior.clone().into());
-                let _ = build_settings(&ui).save();
+                let _ = pull_settings_from_ui(&ui).save();
             }
 
             execute_close_behavior(&ui, &behavior_str);
@@ -407,17 +444,41 @@ fn execute_close_behavior(ui: &MainWindow, behavior: &str) -> CloseRequestRespon
     }
 }
 
-/// Build a `Settings` snapshot from the current MainWindow property values.
-fn build_settings(ui: &MainWindow) -> Settings {
+/// Push all `Settings` fields to MainWindow properties on startup
+/// (which are `<=>`-bound to `ThemeSettings` globals).
+fn push_settings_to_ui(ui: &MainWindow, settings: &Settings) {
+    ui.set_theme_mode(settings.theme_mode.clone().into());
+    ui.set_auto_archive_days(settings.auto_archive_days as i32);
+    ui.set_auto_archive_enabled(settings.auto_archive_enabled);
+    ui.set_close_behavior(settings.close_behavior.clone().into());
+    ui.set_todo_sort_field(settings.column_sort.todo.field.to_i32());
+    ui.set_todo_sort_ascending(settings.column_sort.todo.direction);
+    ui.set_doing_sort_field(settings.column_sort.in_progress.field.to_i32());
+    ui.set_doing_sort_ascending(settings.column_sort.in_progress.direction);
+    ui.set_done_sort_field(settings.column_sort.done.field.to_i32());
+    ui.set_done_sort_ascending(settings.column_sort.done.direction);
+}
+
+/// Snapshot MainWindow properties into a `Settings` struct for persisting.
+fn pull_settings_from_ui(ui: &MainWindow) -> Settings {
     Settings {
         theme_mode: ui.get_theme_mode().to_string(),
         auto_archive_days: ui.get_auto_archive_days() as u32,
         auto_archive_enabled: ui.get_auto_archive_enabled(),
         close_behavior: ui.get_close_behavior().to_string(),
         column_sort: ColumnSortSettings {
-            todo: get_sort_config(ui, TaskStatus::Todo),
-            in_progress: get_sort_config(ui, TaskStatus::InProgress),
-            done: get_sort_config(ui, TaskStatus::Done),
+            todo: SortConfig {
+                field: SortField::from_i32(ui.get_todo_sort_field()),
+                direction: ui.get_todo_sort_ascending(),
+            },
+            in_progress: SortConfig {
+                field: SortField::from_i32(ui.get_doing_sort_field()),
+                direction: ui.get_doing_sort_ascending(),
+            },
+            done: SortConfig {
+                field: SortField::from_i32(ui.get_done_sort_field()),
+                direction: ui.get_done_sort_ascending(),
+            },
         },
     }
 }
@@ -427,58 +488,55 @@ fn extract_payload(data: Option<Rc<dyn std::any::Any>>) -> Option<DragPayload> {
         .map(|rc| (*rc).clone())
 }
 
-/// Reload all three columns from the database and set them on the UI.
+/// Reload all three columns from the database and update the models in-place.
 fn reload_all_columns(
     task_repo: &dyn TaskRepository,
     tag_repo: &dyn TagRepository,
     ui: &MainWindow,
+    models: &ColumnModels,
 ) {
-    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Todo, ui);
-    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::InProgress, ui);
-    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Done, ui);
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Todo, ui, models);
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::InProgress, ui, models);
+    rebuild_and_set_column(task_repo, tag_repo, TaskStatus::Done, ui, models);
 }
 
-/// Reload tasks for `status` from the database, build a fresh `ModelRc`,
-/// and set it on the correct `MainWindow` property.
+/// Reload tasks for `status` from the database and update the `ColumnModels` in-place
+/// via `VecModel::set_vec()`, avoiding new `ModelRc` allocations.
 fn rebuild_and_set_column(
     task_repo: &dyn TaskRepository,
     tag_repo: &dyn TagRepository,
     status: TaskStatus,
     ui: &MainWindow,
+    models: &ColumnModels,
 ) {
+    let sort_config = get_sort_config(ui, status);
+    let cards = load_and_build_cards(task_repo, tag_repo, status, sort_config);
+    models.update(status, cards);
+}
+
+/// Load tasks from DB, sort, and convert to `Vec<TaskCardUi>` for the UI model.
+fn load_and_build_cards(
+    task_repo: &dyn TaskRepository,
+    tag_repo: &dyn TagRepository,
+    status: TaskStatus,
+    sort_config: SortConfig,
+) -> Vec<TaskCardUi> {
     let mut tasks = match task_repo.load_by_status(status) {
         Ok(t) => t,
-        Err(_) => return,
+        Err(_) => return vec![],
     };
-    // Apply client-side sort according to the column's sort config
-    let sort_config = get_sort_config(ui, status);
     sort_tasks(&mut tasks, sort_config);
 
     let ids: Vec<i64> = tasks.iter().map(|t| t.id).collect();
     let tags = tag_repo.load_for_tasks(&ids).unwrap_or_default();
-    let model = build_card_model(&tasks, &tags);
 
-    match status {
-        TaskStatus::Todo => ui.set_todo(model),
-        TaskStatus::InProgress => ui.set_doing(model),
-        TaskStatus::Done => ui.set_done(model),
-        _ => {}
-    }
-}
-
-/// Convert domain task list + tag map into a Slint `ModelRc<TaskCardUi>`.
-fn build_card_model(
-    tasks: &[model::Task],
-    tags_map: &HashMap<i64, Vec<String>>,
-) -> ModelRc<TaskCardUi> {
-    let cards: Vec<TaskCardUi> = tasks
+    tasks
         .iter()
         .map(|task| {
-            let tags = tags_map.get(&task.id).cloned().unwrap_or_default();
-            card_data_to_slint(task.to_card_data(tags))
+            let task_tags = tags.get(&task.id).cloned().unwrap_or_default();
+            card_data_to_slint(task.to_card_data(task_tags))
         })
-        .collect();
-    vec_to_model_rc(cards)
+        .collect()
 }
 
 /// Convert platform-independent `TaskCardData` to the Slint-generated `TaskCardUi`.
