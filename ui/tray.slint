@@ -8,6 +8,8 @@ export component AppTrayIcon inherits SystemTrayIcon {
     callback open-settings();
     callback quit-application();
 
+    clicked => { root.show-window(); }
+
     Menu {
         MenuItem {
             title: "显示窗口";
