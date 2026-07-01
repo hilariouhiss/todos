@@ -45,7 +45,10 @@ export component SettingsDialog inherits Rectangle {
 
     property <int> theme-index: ThemeSettings.theme-mode == "light" ? 1
         : ThemeSettings.theme-mode == "dark" ? 2 : 0;
-    in-out property <string> days-text: ThemeSettings.auto-archive-days;
+
+    // Auto-archive — buffered in local properties, written back on confirm.
+    property <bool> auto-archive-enabled: ThemeSettings.auto-archive-enabled;
+    property <string> days-text: ThemeSettings.auto-archive-days;
 
     // Close behavior: "" (unset / ask every time), "quit", "minimize_to_tray"
     property <int> close-behavior-index: ThemeSettings.close-behavior == "quit" ? 1
@@ -89,7 +92,7 @@ export component SettingsDialog inherits Rectangle {
                 HorizontalLayout {
                     spacing: 6px;
                     enable-check := CheckBox {
-                        checked <=> ThemeSettings.auto-archive-enabled;
+                        checked <=> root.auto-archive-enabled;
                     }
                     Text { text: "启用自动归档"; vertical-alignment: center; color: Theme.text-primary; }
                 }
@@ -99,12 +102,12 @@ export component SettingsDialog inherits Rectangle {
                     Text {
                         text: "归档天数（0 = 完成即归档）";
                         vertical-alignment: center;
-                        color: ThemeSettings.auto-archive-enabled ? Theme.text-secondary
+                        color: root.auto-archive-enabled ? Theme.text-secondary
                             : Theme.text-secondary.with-alpha(0.4);
                     }
                     days-input := StyledTextInput {
                         text <=> root.days-text;
-                        enabled: ThemeSettings.auto-archive-enabled;
+                        enabled: root.auto-archive-enabled;
                     }
                 }
             }
@@ -143,6 +146,9 @@ export component SettingsDialog inherits Rectangle {
                     // Write theme mode
                     ThemeSettings.theme-mode = root.theme-index == 0 ? "system"
                         : root.theme-index == 1 ? "light" : "dark";
+
+                    // Write auto-archive
+                    ThemeSettings.auto-archive-enabled = root.auto-archive-enabled;
                     ThemeSettings.auto-archive-days = root.days-text.to-float();
 
                     // Write close behavior
